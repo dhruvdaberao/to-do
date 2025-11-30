@@ -1,51 +1,67 @@
 const mongoose = require('mongoose');
 
-// --- 1. CONFIGURATION ---
-let isConnected = false;
+// --- 1. CONFIGURATION & CACHING ---
+// Cache the connection to prevent cold-start issues in Vercel
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
 const connectToDatabase = async () => {
-  if (isConnected) return;
-  
-  if (!process.env.MONGO_URI) {
-    throw new Error('MONGO_URI is undefined in Vercel Environment Variables.');
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  const uri = process.env.MONGO_URI;
+
+  if (!uri) {
+    throw new Error('MONGO_URI is missing in Vercel Environment Variables.');
+  }
+
+  // Common User Error Check
+  if (uri.includes('<password>')) {
+    throw new Error('Your MONGO_URI still contains "<password>". Please replace it with your actual database password in Vercel settings.');
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000, // Fail fast if IP blocked
+    };
+
+    console.log("Connecting to MongoDB...");
+    cached.promise = mongoose.connect(uri, opts).then((mongoose) => {
+      console.log("MongoDB Connected Successfully");
+      return mongoose;
+    });
   }
 
   try {
-    console.log("Attempting to connect to MongoDB...");
-    // connect with options to prevent timeout issues
-    await mongoose.connect(process.env.MONGO_URI, {
-      serverSelectionTimeoutMS: 5000, // Fail fast if IP is blocked
-    });
-    isConnected = true;
-    console.log("Connected to MongoDB successfully");
-  } catch (err) {
-    console.error("MongoDB Connection Error:", err);
-    // Throwing with specific message to help user debug
-    if (err.name === 'MongooseServerSelectionError') {
-      throw new Error('IP Address Blocked by MongoDB. Go to Network Access > Add IP > Allow 0.0.0.0/0');
-    }
-    throw err;
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null; // Reset promise on failure
+    console.error("MongoDB Connection Failed:", e);
+    throw e;
   }
+
+  return cached.conn;
 };
 
 // --- 2. SCHEMAS ---
 
-// User Schema
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-// Room Schema
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   pin: { type: String, required: true },
   targetDate: { type: Object, required: true },
   creatorId: String,
   members: [String],
-  
-  // App State
   stickers: { type: Array, default: [] },
   todoItems: { type: Array, default: ['Plan a cute date', 'Buy chocolates'] },
   noteState: { type: Object, default: { x: 0, y: 0, rotation: -2, scale: 1 } },
@@ -56,7 +72,7 @@ const RoomSchema = new mongoose.Schema({
   chatMessages: { type: Array, default: [] }
 });
 
-// Models
+// Prevent model overwrite in serverless environment
 let User, Room;
 try {
   User = mongoose.model('User');
@@ -68,18 +84,16 @@ try {
 
 // --- 3. SERVERLESS HANDLER ---
 module.exports = async (req, res) => {
-  // CORS Headers
+  // CORS Handling
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST,PUT,DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  // Health Check (GET request)
   if (req.method === 'GET') {
      return res.status(200).json({ status: 'API is running' });
   }
@@ -88,11 +102,13 @@ module.exports = async (req, res) => {
     await connectToDatabase();
     const { action, payload } = req.body;
 
-    // --- AUTH ROUTES ---
+    if (!action) return res.status(400).json({ error: 'No action provided' });
+
+    // AUTH
     if (action === 'REGISTER') {
       const { username, password } = payload;
       const existing = await User.findOne({ username });
-      if (existing) return res.status(400).json({ error: 'Username taken' });
+      if (existing) return res.status(400).json({ error: 'Username already taken' });
       const newUser = await User.create({ username, password });
       return res.status(200).json({ success: true, userId: newUser._id, username });
     }
@@ -100,22 +116,18 @@ module.exports = async (req, res) => {
     if (action === 'LOGIN') {
       const { username, password } = payload;
       const user = await User.findOne({ username, password });
-      if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+      if (!user) return res.status(401).json({ error: 'Invalid username or password' });
       return res.status(200).json({ success: true, userId: user._id, username });
     }
 
-    // --- ROOM ROUTES ---
+    // ROOMS
     if (action === 'CREATE_ROOM') {
       const { roomId, pin, targetDate, creatorId } = payload;
       const existing = await Room.findOne({ roomId });
-      if (existing) return res.status(400).json({ error: 'Room ID taken' });
+      if (existing) return res.status(400).json({ error: 'Room Name already exists' });
       
       const newRoom = await Room.create({
-        roomId,
-        pin,
-        targetDate,
-        creatorId,
-        members: [creatorId]
+        roomId, pin, targetDate, creatorId, members: [creatorId]
       });
       return res.status(200).json({ success: true, room: newRoom });
     }
@@ -124,7 +136,7 @@ module.exports = async (req, res) => {
       const { roomId, pin, username } = payload;
       const room = await Room.findOne({ roomId });
       if (!room) return res.status(404).json({ error: 'Room not found' });
-      if (room.pin !== pin) return res.status(403).json({ error: 'Invalid PIN' });
+      if (room.pin !== pin) return res.status(403).json({ error: 'Incorrect PIN' });
       
       if (!room.members.includes(username)) {
         room.members.push(username);
@@ -142,7 +154,8 @@ module.exports = async (req, res) => {
 
     if (action === 'SYNC_ROOM') {
       const { roomId, updates } = payload;
-      const room = await Room.findOneAndUpdate({ roomId }, { $set: updates }, { new: true });
+      // Use findOneAndUpdate to reduce race conditions
+      await Room.findOneAndUpdate({ roomId }, { $set: updates });
       return res.status(200).json({ success: true });
     }
 
@@ -161,14 +174,14 @@ module.exports = async (req, res) => {
       return res.status(200).json({ success: true });
     }
     
-    return res.status(400).json({ error: 'Invalid action' });
+    return res.status(400).json({ error: 'Unknown action' });
 
   } catch (error) {
-    console.error("Server Logic Error:", error);
-    // Return specific error message for debugging on frontend
+    console.error("API Logic Error:", error);
+    // Return specific error message to frontend
     return res.status(500).json({ 
-      error: error.message || "Internal Server Error",
-      details: "Check Vercel Logs for more info."
+      error: "Backend Error", 
+      details: error.message 
     });
   }
 };

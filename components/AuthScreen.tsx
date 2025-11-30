@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, User, Lock } from 'lucide-react';
+import { ArrowRight, User, Lock, AlertCircle } from 'lucide-react';
 
 interface AuthScreenProps {
   onAuthenticate: (user: { username: string }) => void;
@@ -11,11 +11,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [detailedError, setDetailedError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setDetailedError('');
     setLoading(true);
 
     try {
@@ -30,14 +32,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
 
       const contentType = res.headers.get("content-type");
       
-      // If server returns error, try to parse JSON for the specific message
       if (!res.ok) {
           if (contentType && contentType.includes("application/json")) {
               const errData = await res.json();
+              if (errData.details) setDetailedError(errData.details);
               throw new Error(errData.error || `Server Error ${res.status}`);
           }
-          if (res.status === 404) throw new Error("Backend not found (404). The file 'api/data.js' is missing from your deployment.");
-          if (res.status === 500) throw new Error("Database Error (500). Check MONGO_URI in Vercel or IP Access.");
+          if (res.status === 404) throw new Error("Backend not found (404). File 'api/data.js' missing.");
+          if (res.status === 500) throw new Error("Database Error (500). Check Vercel logs.");
           throw new Error(`Connection failed (${res.status})`);
       }
       
@@ -50,15 +52,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Connection error. Is the backend running?');
+      setError(err.message || 'Connection error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-grid-pattern flex items-center justify-center p-6">
-      <div className="w-full max-w-sm bg-white border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] rounded-xl overflow-hidden transform rotate-1">
+    <div className="min-h-screen bg-grid-pattern flex items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-sm bg-white border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] rounded-xl overflow-hidden transform rotate-1 mx-2 sm:mx-0">
         
         {/* Header */}
         <div className="bg-yellow-400 p-6 border-b-4 border-slate-900 text-center">
@@ -71,10 +73,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-8 flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="p-6 sm:p-8 flex flex-col gap-4">
             {error && (
-              <div className="bg-rose-100 text-rose-600 p-3 rounded-lg font-hand font-bold text-center border-2 border-rose-200 text-sm leading-tight break-words">
-                {error}
+              <div className="bg-rose-50 text-rose-600 p-3 rounded-lg border-2 border-rose-200 text-sm break-words">
+                <div className="flex items-center gap-2 font-bold mb-1">
+                   <AlertCircle size={16} /> <span>{error}</span>
+                </div>
+                {detailedError && (
+                    <div className="text-xs font-mono bg-white/50 p-1 rounded mt-1 border border-rose-100">
+                        Details: {detailedError}
+                    </div>
+                )}
               </div>
             )}
 
@@ -116,7 +125,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
         <div className="bg-slate-100 p-4 text-center border-t-4 border-slate-900">
             <button 
               type="button"
-              onClick={() => { setIsRegister(!isRegister); setError(''); }}
+              onClick={() => { setIsRegister(!isRegister); setError(''); setDetailedError(''); }}
               className="text-slate-500 font-bold hover:text-slate-900 hover:underline underline-offset-4"
             >
               {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
