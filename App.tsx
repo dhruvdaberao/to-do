@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, getNextAnniversaryDateString } from './utils/time';
 import CountdownTimer from './components/CountdownTimer';
@@ -16,33 +16,28 @@ import { AVAILABLE_STICKERS, StickerDefinition } from './components/Doodles';
 const TARGET_MONTH = 6; // July (0-indexed)
 const TARGET_DAY = 6;
 
+// Determine API URL based on environment
+// If localhost, look for local server. If production (Vercel), use relative path to serverless function.
+const API_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+    ? "http://localhost:5000/api/data" 
+    : "/api/data";
+
 // No default stickers on the canvas initially
 const DEFAULT_STICKERS: StickerData[] = [];
 
-// Default Note Position logic (Relative Offset)
 const getInitialNoteState = (): NoteData => {
-    // Start at 0,0 offset. It will flow naturally below the footer.
-    return {
-        x: 0,
-        y: 0,
-        rotation: -2,
-        scale: 1
-    };
+    return { x: 0, y: 0, rotation: -2, scale: 1 };
 };
 
-// Interaction Types
 type InteractionMode = 'IDLE' | 'DRAG' | 'RESIZE' | 'ROTATE';
 
 interface InteractionState {
   mode: InteractionMode;
   stickerId: string | null;
   startMouse: { x: number, y: number };
-  // For drag
   startPos: { x: number, y: number };
-  // For resize
   startScale: number;
-  startDistance: number; // Distance from center of sticker to mouse
-  // For rotate
+  startDistance: number;
   startRotation: number;
   startAngle: number;
 }
@@ -52,22 +47,18 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft(TARGET_MONTH, TARGET_DAY));
   const [targetDateString, setTargetDateString] = useState<string>('');
   
-  // To-Do List State
+  // App Data State (Synced)
   const [todoItems, setTodoItems] = useState<string[]>([]);
-  const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
-
-  // Sticker State
   const [stickers, setStickers] = useState<StickerData[]>([]);
-  const [customLibrary, setCustomLibrary] = useState<StickerDefinition[]>([]);
-  
-  // Bucket List Note State
   const [noteState, setNoteState] = useState<NoteData>(getInitialNoteState());
-
-  // Bubble Texts State
   const [redBubbleText, setRedBubbleText] = useState('');
   const [greenBubbleText, setGreenBubbleText] = useState('');
+  const [photoData, setPhotoData] = useState<string>('us.png'); // Default photo
 
-  // Interaction State (Drag & Resize & Rotate)
+  const [customLibrary, setCustomLibrary] = useState<StickerDefinition[]>([]);
+  const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
+
+  // Interaction State
   const [interaction, setInteraction] = useState<InteractionState>({
     mode: 'IDLE',
     stickerId: null,
@@ -80,10 +71,59 @@ const App: React.FC = () => {
   });
 
   const [isOverTrash, setIsOverTrash] = useState(false);
+  const isSyncingRef = useRef(false); // To prevent fetch loops
 
-  // --- EFFECTS ---
+  // --- SYNC LOGIC ---
 
-  // 1. Load Data from LocalStorage
+  // 1. Fetch from Backend (Polling)
+  const fetchData = async () => {
+      try {
+          const res = await fetch(API_URL);
+          if (res.ok) {
+              const data = await res.json();
+              // Only update if data exists
+              if (data) {
+                  isSyncingRef.current = true;
+                  if (data.stickers) setStickers(data.stickers);
+                  if (data.todoItems) setTodoItems(data.todoItems);
+                  if (data.noteState) setNoteState(data.noteState);
+                  if (data.redBubble) setRedBubbleText(data.redBubble);
+                  if (data.greenBubble) setGreenBubbleText(data.greenBubble);
+                  if (data.photo) setPhotoData(data.photo);
+                  // Allow updates again after a tick
+                  setTimeout(() => { isSyncingRef.current = false; }, 100);
+              }
+          }
+      } catch (e) {
+          // Backend not running, ignore silently and use local state
+      }
+  };
+
+  // 2. Save to Backend
+  const saveDataToBackend = useCallback(async () => {
+      if (isSyncingRef.current) return; // Don't save if we just fetched
+
+      const payload = {
+          stickers,
+          todoItems,
+          noteState,
+          redBubble: redBubbleText,
+          greenBubble: greenBubbleText,
+          photo: photoData
+      };
+
+      try {
+          await fetch(API_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+          });
+      } catch (e) {
+          // Backend not running
+      }
+  }, [stickers, todoItems, noteState, redBubbleText, greenBubbleText, photoData]);
+
+  // Initial Load & Polling
   useEffect(() => {
     setTargetDateString(getNextAnniversaryDateString(TARGET_MONTH, TARGET_DAY));
     
@@ -92,104 +132,72 @@ const App: React.FC = () => {
       setTimeLeft(calculateTimeLeft(TARGET_MONTH, TARGET_DAY));
     }, 1000);
 
-    // Load Todo Items
-    try {
-        const savedTodos = localStorage.getItem('bucket-list-items');
-        if (savedTodos) {
-            setTodoItems(JSON.parse(savedTodos));
-        } else {
-            setTodoItems(['Plan a cute date', 'Buy chocolates']);
-        }
-    } catch (e) {
-        console.warn("Failed to load todos", e);
-    }
+    // Initial Load from LocalStorage (Fallback)
+    const loadLocal = (key: string, setter: Function, defaultVal: any) => {
+        const saved = localStorage.getItem(key);
+        if (saved) setter(JSON.parse(saved));
+        else setter(defaultVal);
+    };
+    
+    loadLocal('bucket-list-items', setTodoItems, ['Plan a cute date', 'Buy chocolates']);
+    loadLocal('my-stickers', setStickers, DEFAULT_STICKERS);
+    loadLocal('my-note-state', setNoteState, getInitialNoteState());
+    loadLocal('my-custom-stickers', setCustomLibrary, []);
+    
+    const savedPhoto = localStorage.getItem('our-memory-photo');
+    if (savedPhoto) setPhotoData(savedPhoto);
+    
+    const rTxt = localStorage.getItem('red-bubble-text');
+    if (rTxt) setRedBubbleText(rTxt);
+    const gTxt = localStorage.getItem('green-bubble-text');
+    if (gTxt) setGreenBubbleText(gTxt);
 
-    // Load Stickers on Canvas
-    try {
-        const savedStickers = localStorage.getItem('my-stickers');
-        if (savedStickers) {
-            setStickers(JSON.parse(savedStickers));
-        } else {
-            setStickers(DEFAULT_STICKERS); 
-        }
-    } catch (e) {
-        console.warn("Failed to load stickers", e);
-        setStickers(DEFAULT_STICKERS);
-    }
+    // Start Polling for Sync
+    fetchData(); // Initial fetch
+    const syncInterval = setInterval(fetchData, 3000); // Poll every 3 seconds
 
-    // Load Note State
-    try {
-        const savedNote = localStorage.getItem('my-note-state');
-        if (savedNote) {
-            setNoteState(JSON.parse(savedNote));
-        }
-    } catch (e) {
-        console.warn("Failed to load note state", e);
-    }
-
-    // Load Custom Library
-    try {
-        const savedLibrary = localStorage.getItem('my-custom-stickers');
-        if (savedLibrary) {
-            setCustomLibrary(JSON.parse(savedLibrary));
-        }
-    } catch (e) {
-        console.warn("Failed to load library", e);
-    }
-
-    // Load Bubble Texts
-    const savedRedText = localStorage.getItem('red-bubble-text');
-    if (savedRedText) setRedBubbleText(savedRedText);
-
-    const savedGreenText = localStorage.getItem('green-bubble-text');
-    if (savedGreenText) setGreenBubbleText(savedGreenText);
-
-    return () => clearInterval(timer);
+    return () => {
+        clearInterval(timer);
+        clearInterval(syncInterval);
+    };
   }, []);
 
-  // 2. Save Data on Change (With Error Handling)
+  // Save Effects (Auto-save to LocalStorage AND Backend)
   useEffect(() => {
-    try {
-        localStorage.setItem('bucket-list-items', JSON.stringify(todoItems));
-    } catch (e) {
-        console.error("Storage limit reached for todos", e);
-    }
-  }, [todoItems]);
+    localStorage.setItem('bucket-list-items', JSON.stringify(todoItems));
+    saveDataToBackend();
+  }, [todoItems, saveDataToBackend]);
 
   useEffect(() => {
-    try {
-        localStorage.setItem('my-stickers', JSON.stringify(stickers));
-    } catch (e) {
-        console.error("Storage limit reached for stickers", e);
-    }
-  }, [stickers]);
+    localStorage.setItem('my-stickers', JSON.stringify(stickers));
+    saveDataToBackend();
+  }, [stickers, saveDataToBackend]);
   
   useEffect(() => {
-    try {
-        localStorage.setItem('my-note-state', JSON.stringify(noteState));
-    } catch (e) {
-        console.error("Storage limit reached for note state", e);
-    }
-  }, [noteState]);
+    localStorage.setItem('my-note-state', JSON.stringify(noteState));
+    saveDataToBackend();
+  }, [noteState, saveDataToBackend]);
+
+  useEffect(() => {
+    localStorage.setItem('red-bubble-text', redBubbleText);
+    saveDataToBackend();
+  }, [redBubbleText, saveDataToBackend]);
+
+  useEffect(() => {
+    localStorage.setItem('green-bubble-text', greenBubbleText);
+    saveDataToBackend();
+  }, [greenBubbleText, saveDataToBackend]);
+
+  useEffect(() => {
+    localStorage.setItem('our-memory-photo', photoData);
+    saveDataToBackend();
+  }, [photoData, saveDataToBackend]);
 
   useEffect(() => {
       if (customLibrary.length > 0) {
-          try {
-              localStorage.setItem('my-custom-stickers', JSON.stringify(customLibrary));
-          } catch (e) {
-              console.error("Storage limit reached for library", e);
-          }
+          localStorage.setItem('my-custom-stickers', JSON.stringify(customLibrary));
       }
   }, [customLibrary]);
-
-  // Save Bubbles
-  useEffect(() => {
-      localStorage.setItem('red-bubble-text', redBubbleText);
-  }, [redBubbleText]);
-
-  useEffect(() => {
-      localStorage.setItem('green-bubble-text', greenBubbleText);
-  }, [greenBubbleText]);
 
 
   // --- HANDLERS ---
@@ -200,7 +208,6 @@ const App: React.FC = () => {
         id: `s-${Date.now()}`,
         type: 'image',
         src,
-        // Place sticker in center of current viewport view
         x: window.innerWidth / 2 - 50 + (Math.random() * 40 - 20),
         y: scrollY + window.innerHeight / 2 - 50 + (Math.random() * 40 - 20),
         rotation: Math.random() * 30 - 15,
@@ -218,11 +225,9 @@ const App: React.FC = () => {
       setCustomLibrary(prev => [...prev, newDef]);
   };
 
-  // 1. Drag Start (Generic)
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
     let target = { x: 0, y: 0, scale: 1, rotation: 0 };
     
-    // Check if it's the Note or a Sticker
     if (id === 'bucket-list') {
         target = { ...noteState };
     } else {
@@ -246,7 +251,6 @@ const App: React.FC = () => {
     });
   };
 
-  // Helper to get element center regardless of absolute/relative positioning
   const getElementCenter = (id: string) => {
       const el = document.getElementById(id);
       if (!el) return null;
@@ -257,13 +261,10 @@ const App: React.FC = () => {
       };
   };
 
-  // 2. Resize Start (Generic)
   const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
     let targetScale = 1;
-    
-    if (id === 'bucket-list') {
-        targetScale = noteState.scale;
-    } else {
+    if (id === 'bucket-list') targetScale = noteState.scale;
+    else {
         const sticker = stickers.find(s => s.id === id);
         if (!sticker) return;
         targetScale = sticker.scale;
@@ -271,7 +272,6 @@ const App: React.FC = () => {
 
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-
     const center = getElementCenter(id);
     if (!center) return;
 
@@ -281,7 +281,7 @@ const App: React.FC = () => {
         mode: 'RESIZE',
         stickerId: id,
         startMouse: { x: clientX, y: clientY },
-        startPos: { x: 0, y: 0 }, // Not needed for resize logic using distance
+        startPos: { x: 0, y: 0 },
         startScale: targetScale,
         startDistance: dist,
         startRotation: 0,
@@ -289,13 +289,10 @@ const App: React.FC = () => {
     });
   };
 
-  // 3. Rotate Start (Generic)
   const handleRotateStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
     let targetRotation = 0;
-
-    if (id === 'bucket-list') {
-        targetRotation = noteState.rotation;
-    } else {
+    if (id === 'bucket-list') targetRotation = noteState.rotation;
+    else {
         const sticker = stickers.find(s => s.id === id);
         if (!sticker) return;
         targetRotation = sticker.rotation;
@@ -303,7 +300,6 @@ const App: React.FC = () => {
 
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-
     const center = getElementCenter(id);
     if (!center) return;
 
@@ -313,7 +309,7 @@ const App: React.FC = () => {
         mode: 'ROTATE',
         stickerId: id,
         startMouse: { x: clientX, y: clientY },
-        startPos: { x: 0, y: 0 }, // Not needed
+        startPos: { x: 0, y: 0 },
         startScale: 1,
         startDistance: 0,
         startRotation: targetRotation,
@@ -321,14 +317,12 @@ const App: React.FC = () => {
     });
   };
 
-  // 4. Global Move
   const handleGlobalMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (interaction.mode === 'IDLE' || !interaction.stickerId) return;
 
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
 
-    // Helper to update state based on ID
     const updateTarget = (updateFn: (s: any) => any) => {
         if (interaction.stickerId === 'bucket-list') {
             setNoteState(prev => updateFn(prev));
@@ -340,13 +334,11 @@ const App: React.FC = () => {
     if (interaction.mode === 'DRAG') {
         const deltaX = clientX - interaction.startMouse.x;
         const deltaY = clientY - interaction.startMouse.y;
-        
         const newX = interaction.startPos.x + deltaX;
         const newY = interaction.startPos.y + deltaY;
 
         updateTarget(s => ({ ...s, x: newX, y: newY }));
 
-        // Trash detection (Only for stickers, NOT for bucket-list)
         if (interaction.stickerId !== 'bucket-list') {
             const trashZone = { x: window.innerWidth / 2, y: window.innerHeight - 50, radius: 100 };
             const distance = Math.sqrt(Math.pow(clientX - trashZone.x, 2) + Math.pow(clientY - trashZone.y, 2));
@@ -354,7 +346,6 @@ const App: React.FC = () => {
         }
     } 
     else if (interaction.mode === 'RESIZE') {
-        // We use the DOM element center for calculation now
         const center = getElementCenter(interaction.stickerId);
         if (center) {
              const currentDist = Math.sqrt(Math.pow(clientX - center.x, 2) + Math.pow(clientY - center.y, 2));
@@ -377,22 +368,16 @@ const App: React.FC = () => {
 
   }, [interaction]);
 
-  // 5. Global End
   const handleGlobalEnd = useCallback(() => {
     if (interaction.mode === 'DRAG' && interaction.stickerId) {
         if (isOverTrash && interaction.stickerId !== 'bucket-list') {
-            // Delete sticker
             setStickers(prev => prev.filter(s => s.id !== interaction.stickerId));
         }
     }
-    
-    // Reset state
     setInteraction(prev => ({ ...prev, mode: 'IDLE', stickerId: null }));
     setIsOverTrash(false);
-
   }, [interaction, isOverTrash]);
 
-  // Attach global event listeners
   useEffect(() => {
     if (interaction.mode !== 'IDLE') {
         window.addEventListener('mousemove', handleGlobalMove);
@@ -412,7 +397,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 relative overflow-x-hidden bg-grid-pattern pb-32">
       
-      {/* --- UI Controls --- */}
       <StickerMenu 
         stickerLibrary={[...AVAILABLE_STICKERS, ...customLibrary]} 
         onAddStickerToCanvas={addStickerToCanvas} 
@@ -428,31 +412,31 @@ const App: React.FC = () => {
         setItems={setTodoItems}
       />
 
-      {/* Header Content */}
       <div className="flex flex-col items-center gap-6 z-10 mt-24 sm:mt-8 mb-10 w-full max-w-4xl">
         <div className="text-center">
              <h1 className="text-5xl sm:text-7xl font-marker text-slate-800 mb-6 drop-shadow-sm leading-tight">
                 Counting down to Us
              </h1>
              
-             {/* Quirky Date Tag */}
-             <div className="inline-block transform -rotate-2 bg-sky-100 border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] px-6 py-2 rounded-lg">
-                <span className="font-hand text-base sm:text-lg text-slate-900 font-bold uppercase tracking-wider">
-                    Next Anniversary • {targetDateString}
-                </span>
+             {/* Quirky Tag - Sky Blue, Tilted, Hard Shadow */}
+             <div className="inline-block transform -rotate-2 hover:rotate-2 transition-transform duration-300">
+                 <div className="bg-sky-200 border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] px-4 py-2 rounded-xl">
+                    <span className="font-hand text-lg sm:text-xl text-slate-900 font-bold uppercase tracking-wider">
+                        Next Anniversary • {targetDateString}
+                    </span>
+                 </div>
              </div>
         </div>
 
         <CountdownTimer timeLeft={timeLeft} />
       </div>
 
-      <TapedPhoto />
+      <TapedPhoto imageSrc={photoData} onImageUpload={setPhotoData} />
 
-      {/* Footer Text - Extra Quirky */}
       <div className="mt-8 mb-12 text-center z-30 opacity-90 max-w-md px-4 relative transform -rotate-1">
         <div className="relative inline-block p-4">
-             {/* Highlighter Effect - Green Tint */}
-             <div className="absolute inset-0 bg-emerald-200/60 rounded-lg -rotate-1 scale-110 pointer-events-none -z-10 blur-[1px]"></div>
+             {/* Highlighter - Light Green */}
+             <div className="absolute inset-0 bg-green-200/40 rounded-lg -rotate-1 scale-110 pointer-events-none -z-10 blur-[1px]"></div>
              
              <p className="font-marker text-3xl sm:text-4xl text-slate-800 leading-tight drop-shadow-sm">
                 "Every second that ticks by is just one second closer to making more memories with you."
@@ -464,7 +448,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* --- Bucket List (In Flow) --- */}
       <div className="z-10 relative w-full flex justify-center mb-16">
          <StickyNote 
             data={noteState}
@@ -490,7 +473,6 @@ const App: React.FC = () => {
          </StickyNote>
       </div>
 
-      {/* --- Quirky Bubbles --- */}
       <div className="flex flex-col sm:flex-row justify-center items-center gap-8 sm:gap-12 z-10 w-full mb-32 px-4">
           <QuirkyBubble 
             text={redBubbleText} 
@@ -506,8 +488,6 @@ const App: React.FC = () => {
           />
       </div>
 
-
-      {/* --- Draggable Stickers (Absolute) --- */}
       {stickers.map(sticker => (
           <DraggableSticker 
             key={sticker.id} 
@@ -517,7 +497,6 @@ const App: React.FC = () => {
             onRotateStart={handleRotateStart}
           />
       ))}
-
     </div>
   );
 };

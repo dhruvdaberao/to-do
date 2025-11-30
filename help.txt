@@ -1,0 +1,96 @@
+
+# HOW TO ENABLE MONGODB SYNC
+
+Because this is a frontend website (React), it cannot connect directly to MongoDB for security reasons. 
+You need to run a tiny "Backend Server" on your computer (or a host like Render/Heroku) to handle the database connection.
+
+Here is exactly how to make it work:
+
+### 1. Create the Server Folder
+1. Create a new folder outside your project called `my-sync-server`.
+2. Open that folder in terminal and run:
+   npm init -y
+   npm install express mongoose cors body-parser dotenv
+
+### 2. Create the Server File
+Create a file named `server.js` in that folder and paste this code:
+
+```javascript
+// server.js
+require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json({ limit: '10mb' })); // Limit increased for images
+
+// 1. Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('Mongo Error:', err));
+
+// 2. Define the Schema (Data Structure)
+const AppDataSchema = new mongoose.Schema({
+  id: { type: String, default: 'main_room' }, // We only use one room for now
+  stickers: Array,
+  todoItems: Array,
+  noteState: Object,
+  redBubble: String,
+  greenBubble: String,
+  photo: String // Base64 image
+});
+
+const AppData = mongoose.model('AppData', AppDataSchema);
+
+// 3. API Routes
+
+// GET: Fetch all data
+app.get('/api/data', async (req, res) => {
+  let data = await AppData.findOne({ id: 'main_room' });
+  if (!data) {
+    // Create default if doesn't exist
+    data = await AppData.create({ id: 'main_room', stickers: [], todoItems: [] });
+  }
+  res.json(data);
+});
+
+// POST: Update data
+app.post('/api/data', async (req, res) => {
+  const { stickers, todoItems, noteState, redBubble, greenBubble, photo } = req.body;
+  
+  // Update the entry
+  await AppData.findOneAndUpdate(
+    { id: 'main_room' },
+    { stickers, todoItems, noteState, redBubble, greenBubble, photo },
+    { upsert: true, new: true }
+  );
+  
+  res.json({ success: true });
+});
+
+const PORT = 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+```
+
+### 3. Configure .env
+Create a `.env` file in the `my-sync-server` folder:
+
+```
+MONGO_URI=your_mongodb_connection_string_here
+```
+
+*Q: Can I use the URL from another project?*
+A: **Yes!** Just paste it there. It won't overwrite data unless you use the exact same collection names, but this script uses a specific model so it should be safe.
+
+### 4. Run the Server
+In the terminal for `my-sync-server`, run:
+`node server.js`
+
+### 5. Connect the Frontend
+Now, go back to your main website project. 
+If you are running this locally, the `App.tsx` is already configured to look for `http://localhost:5000/api/data`.
+
+If the server is running, the website will automatically stop using LocalStorage and start syncing with MongoDB!
