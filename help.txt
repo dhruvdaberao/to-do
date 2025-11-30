@@ -1,96 +1,145 @@
 
-# HOW TO ENABLE MONGODB SYNC
+# HOW TO DEPLOY: THE "SINGLE REPO" METHOD (EASIEST)
 
-Because this is a frontend website (React), it cannot connect directly to MongoDB for security reasons. 
-You need to run a tiny "Backend Server" on your computer (or a host like Render/Heroku) to handle the database connection.
+This method allows you to host both your Website (Frontend) and your Database Connection (Backend) in the SAME Vercel project.
 
-Here is exactly how to make it work:
+You do NOT need a separate backend repository.
 
-### 1. Create the Server Folder
-1. Create a new folder outside your project called `my-sync-server`.
-2. Open that folder in terminal and run:
-   npm init -y
-   npm install express mongoose cors body-parser dotenv
+---
 
-### 2. Create the Server File
-Create a file named `server.js` in that folder and paste this code:
+## STEP 1: PREPARE YOUR PROJECT
+
+1. Open your project terminal (VS Code).
+2. Install Mongoose (required to talk to MongoDB):
+   Run this command:
+   `npm install mongoose`
+
+---
+
+## STEP 2: CREATE THE API BACKEND
+
+Vercel automatically treats any file inside a folder named `api` as a backend serverless function.
+
+1. Create a new folder named `api` in the root of your project (at the same level as `src`, `package.json`, etc.).
+2. Inside that folder, create a new file named `data.js`.
+   Path: `your-project/api/data.js`
+
+3. **COPY AND PASTE THIS EXACT CODE INTO `api/data.js`:**
 
 ```javascript
-// server.js
-require('dotenv').config();
-const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
-const bodyParser = require('body-parser');
 
-const app = express();
-app.use(cors());
-app.use(bodyParser.json({ limit: '10mb' })); // Limit increased for images
+// --- 1. CONFIGURATION ---
+// We cache the connection so we don't reconnect on every request
+let isConnected = false;
 
-// 1. Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('Mongo Error:', err));
+const connectToDatabase = async () => {
+  if (isConnected) {
+    console.log('=> Using existing database connection');
+    return;
+  }
 
-// 2. Define the Schema (Data Structure)
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI environment variable is missing in Vercel!');
+  }
+
+  console.log('=> Using new database connection');
+  // Connect to MongoDB
+  await mongoose.connect(process.env.MONGO_URI);
+  isConnected = true;
+};
+
+// --- 2. DATABASE SCHEMA ---
+// This defines what our data looks like in MongoDB
 const AppDataSchema = new mongoose.Schema({
-  id: { type: String, default: 'main_room' }, // We only use one room for now
+  id: { type: String, default: 'main_room' }, // We use one ID to sync everyone to the same room
   stickers: Array,
   todoItems: Array,
   noteState: Object,
   redBubble: String,
   greenBubble: String,
-  photo: String // Base64 image
+  photo: String,
+  customLibrary: Array // SYNCED: Uploaded custom stickers appear for both users
 });
 
-const AppData = mongoose.model('AppData', AppDataSchema);
+// Prevent model recompilation error in serverless environment
+let AppData;
+try {
+  AppData = mongoose.model('AppData');
+} catch {
+  AppData = mongoose.model('AppData', AppDataSchema);
+}
 
-// 3. API Routes
-
-// GET: Fetch all data
-app.get('/api/data', async (req, res) => {
-  let data = await AppData.findOne({ id: 'main_room' });
-  if (!data) {
-    // Create default if doesn't exist
-    data = await AppData.create({ id: 'main_room', stickers: [], todoItems: [] });
-  }
-  res.json(data);
-});
-
-// POST: Update data
-app.post('/api/data', async (req, res) => {
-  const { stickers, todoItems, noteState, redBubble, greenBubble, photo } = req.body;
-  
-  // Update the entry
-  await AppData.findOneAndUpdate(
-    { id: 'main_room' },
-    { stickers, todoItems, noteState, redBubble, greenBubble, photo },
-    { upsert: true, new: true }
+// --- 3. THE SERVERLESS HANDLER ---
+// This function runs every time the frontend requests data
+module.exports = async (req, res) => {
+  // Setup CORS to allow your frontend to talk to this backend
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
-  
-  res.json({ success: true });
-});
 
-const PORT = 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  // Handle the "Preflight" check from the browser
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  try {
+    // Connect to DB
+    await connectToDatabase();
+
+    // GET Request: Frontend asking for latest data
+    if (req.method === 'GET') {
+      let data = await AppData.findOne({ id: 'main_room' });
+      // If no data exists yet, create the initial empty record
+      if (!data) {
+        data = await AppData.create({ id: 'main_room' });
+      }
+      return res.status(200).json(data);
+    }
+
+    // POST Request: Frontend sending new data to save
+    if (req.method === 'POST') {
+      const payload = req.body;
+      // Update the data in MongoDB
+      await AppData.findOneAndUpdate({ id: 'main_room' }, payload, { upsert: true });
+      return res.status(200).json({ success: true });
+    }
+
+  } catch (error) {
+    console.error("Database Error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
 ```
 
-### 3. Configure .env
-Create a `.env` file in the `my-sync-server` folder:
+---
 
-```
-MONGO_URI=your_mongodb_connection_string_here
-```
+## STEP 3: DEPLOY TO VERCEL
 
-*Q: Can I use the URL from another project?*
-A: **Yes!** Just paste it there. It won't overwrite data unless you use the exact same collection names, but this script uses a specific model so it should be safe.
+1. Push your latest code (including the new `api` folder) to GitHub.
+2. Vercel will detect the push and redeploy automatically.
 
-### 4. Run the Server
-In the terminal for `my-sync-server`, run:
-`node server.js`
+---
 
-### 5. Connect the Frontend
-Now, go back to your main website project. 
-If you are running this locally, the `App.tsx` is already configured to look for `http://localhost:5000/api/data`.
+## STEP 4: CONNECT THE DATABASE
 
-If the server is running, the website will automatically stop using LocalStorage and start syncing with MongoDB!
+1. Go to your project dashboard on **Vercel**.
+2. Click **Settings** > **Environment Variables**.
+3. Add a new variable:
+   - **Key**: `MONGO_URI`
+   - **Value**: *(Your MongoDB Connection String)*
+4. Click **Save**.
+5. **IMPORTANT**: Go to the **Deployments** tab and click **Redeploy** on the latest commit so the new variable takes effect.
+
+---
+
+## WHAT TO DO NEXT
+
+1. **Update your local files**: I have updated the `App.tsx` logic for you.
+2. **Update your backend**: Copy the code above into your `api/data.js` file (especially the schema part that now includes `customLibrary`).
+3. **Push to GitHub**: This will update your live site.

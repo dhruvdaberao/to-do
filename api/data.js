@@ -29,7 +29,8 @@ const AppDataSchema = new mongoose.Schema({
   noteState: Object,
   redBubble: String,
   greenBubble: String,
-  photo: String
+  photo: String,
+  customLibrary: Array // SYNCED: Uploaded custom stickers appear for both users
 });
 
 // Prevent model recompilation error in serverless environment

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, Wifi } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, getNextAnniversaryDateString } from './utils/time';
 import CountdownTimer from './components/CountdownTimer';
 import TapedPhoto from './components/TapedPhoto';
@@ -10,6 +10,7 @@ import StickerMenu from './components/StickerMenu';
 import TrashBin from './components/TrashBin';
 import TodoModal from './components/TodoModal';
 import QuirkyBubble from './components/QuirkyBubble';
+import LoginScreen from './components/LoginScreen';
 import { AVAILABLE_STICKERS, StickerDefinition } from './components/Doodles';
 
 // Constants
@@ -17,8 +18,6 @@ const TARGET_MONTH = 6; // July (0-indexed)
 const TARGET_DAY = 6;
 
 // API URL CONFIGURATION
-// For Single Repo Deployment (Option 1): We want "/api/data" (relative path)
-// For Separate Repo Deployment (Option 2): We check VITE_API_URL
 const API_URL = (import.meta as any).env?.VITE_API_URL || "/api/data";
 
 // No default stickers on the canvas initially
@@ -42,6 +41,10 @@ interface InteractionState {
 }
 
 const App: React.FC = () => {
+  // --- AUTHENTICATION STATE ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLive, setIsLive] = useState(false); // Connection status
+
   // --- STATE ---
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft(TARGET_MONTH, TARGET_DAY));
   const [targetDateString, setTargetDateString] = useState<string>('');
@@ -53,8 +56,8 @@ const App: React.FC = () => {
   const [redBubbleText, setRedBubbleText] = useState('');
   const [greenBubbleText, setGreenBubbleText] = useState('');
   const [photoData, setPhotoData] = useState<string>('us.png'); // Default photo
-
   const [customLibrary, setCustomLibrary] = useState<StickerDefinition[]>([]);
+
   const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
 
   // Interaction State
@@ -76,36 +79,42 @@ const App: React.FC = () => {
 
   // 1. Fetch from Backend (Polling)
   const fetchData = async () => {
+      // Only fetch if logged in
+      if (!isAuthenticated) return;
+
       try {
           const res = await fetch(API_URL);
           if (res.ok) {
-              // Try catch for JSON parsing in case endpoint returns HTML error page (common in dev)
               try {
                 const data = await res.json();
-                // Only update if data exists
                 if (data) {
                     isSyncingRef.current = true;
+                    // Update state with data from backend
                     if (data.stickers) setStickers(data.stickers);
                     if (data.todoItems) setTodoItems(data.todoItems);
                     if (data.noteState) setNoteState(data.noteState);
                     if (data.redBubble) setRedBubbleText(data.redBubble);
                     if (data.greenBubble) setGreenBubbleText(data.greenBubble);
                     if (data.photo) setPhotoData(data.photo);
-                    // Allow updates again after a tick
+                    if (data.customLibrary) setCustomLibrary(data.customLibrary);
+                    
+                    setIsLive(true); // Connection successful
                     setTimeout(() => { isSyncingRef.current = false; }, 100);
                 }
               } catch (jsonError) {
-                // Silently ignore JSON parse errors (backend might not be ready)
+                setIsLive(false);
               }
+          } else {
+             setIsLive(false);
           }
       } catch (e) {
-          // Backend not running, ignore silently and use local state
+          setIsLive(false);
       }
   };
 
   // 2. Save to Backend
   const saveDataToBackend = useCallback(async () => {
-      if (isSyncingRef.current) return; // Don't save if we just fetched
+      if (isSyncingRef.current || !isAuthenticated) return;
 
       const payload = {
           stickers,
@@ -113,7 +122,8 @@ const App: React.FC = () => {
           noteState,
           redBubble: redBubbleText,
           greenBubble: greenBubbleText,
-          photo: photoData
+          photo: photoData,
+          customLibrary // Now syncing custom uploaded stickers!
       };
 
       try {
@@ -122,10 +132,11 @@ const App: React.FC = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
           });
+          setIsLive(true);
       } catch (e) {
-          // Backend not running
+          setIsLive(false);
       }
-  }, [stickers, todoItems, noteState, redBubbleText, greenBubbleText, photoData]);
+  }, [stickers, todoItems, noteState, redBubbleText, greenBubbleText, photoData, customLibrary, isAuthenticated]);
 
   // Initial Load & Polling
   useEffect(() => {
@@ -136,72 +147,84 @@ const App: React.FC = () => {
       setTimeLeft(calculateTimeLeft(TARGET_MONTH, TARGET_DAY));
     }, 1000);
 
-    // Initial Load from LocalStorage (Fallback)
-    const loadLocal = (key: string, setter: Function, defaultVal: any) => {
-        const saved = localStorage.getItem(key);
-        if (saved) setter(JSON.parse(saved));
-        else setter(defaultVal);
-    };
-    
-    loadLocal('bucket-list-items', setTodoItems, ['Plan a cute date', 'Buy chocolates']);
-    loadLocal('my-stickers', setStickers, DEFAULT_STICKERS);
-    loadLocal('my-note-state', setNoteState, getInitialNoteState());
-    loadLocal('my-custom-stickers', setCustomLibrary, []);
-    
-    const savedPhoto = localStorage.getItem('our-memory-photo');
-    if (savedPhoto) setPhotoData(savedPhoto);
-    
-    const rTxt = localStorage.getItem('red-bubble-text');
-    if (rTxt) setRedBubbleText(rTxt);
-    const gTxt = localStorage.getItem('green-bubble-text');
-    if (gTxt) setGreenBubbleText(gTxt);
+    // Initial Load from LocalStorage (Fallback / Offline support)
+    if (isAuthenticated) {
+        const loadLocal = (key: string, setter: Function, defaultVal: any) => {
+            const saved = localStorage.getItem(key);
+            if (saved) setter(JSON.parse(saved));
+            else setter(defaultVal);
+        };
+        
+        loadLocal('bucket-list-items', setTodoItems, ['Plan a cute date', 'Buy chocolates']);
+        loadLocal('my-stickers', setStickers, DEFAULT_STICKERS);
+        loadLocal('my-note-state', setNoteState, getInitialNoteState());
+        loadLocal('my-custom-stickers', setCustomLibrary, []);
+        
+        const savedPhoto = localStorage.getItem('our-memory-photo');
+        if (savedPhoto) setPhotoData(savedPhoto);
+        
+        const rTxt = localStorage.getItem('red-bubble-text');
+        if (rTxt) setRedBubbleText(rTxt);
+        const gTxt = localStorage.getItem('green-bubble-text');
+        if (gTxt) setGreenBubbleText(gTxt);
 
-    // Start Polling for Sync
-    fetchData(); // Initial fetch
-    const syncInterval = setInterval(fetchData, 3000); // Poll every 3 seconds
+        // Start Polling for Sync immediately after login
+        fetchData(); 
+        const syncInterval = setInterval(fetchData, 3000); // Poll every 3 seconds
 
-    return () => {
-        clearInterval(timer);
-        clearInterval(syncInterval);
-    };
-  }, []);
+        return () => {
+            clearInterval(timer);
+            clearInterval(syncInterval);
+        };
+    } else {
+        return () => clearInterval(timer);
+    }
+  }, [isAuthenticated]);
 
-  // Save Effects (Auto-save to LocalStorage AND Backend)
+  // Save Effects
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('bucket-list-items', JSON.stringify(todoItems));
     saveDataToBackend();
-  }, [todoItems, saveDataToBackend]);
+  }, [todoItems, saveDataToBackend, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('my-stickers', JSON.stringify(stickers));
     saveDataToBackend();
-  }, [stickers, saveDataToBackend]);
+  }, [stickers, saveDataToBackend, isAuthenticated]);
   
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('my-note-state', JSON.stringify(noteState));
     saveDataToBackend();
-  }, [noteState, saveDataToBackend]);
+  }, [noteState, saveDataToBackend, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('red-bubble-text', redBubbleText);
     saveDataToBackend();
-  }, [redBubbleText, saveDataToBackend]);
+  }, [redBubbleText, saveDataToBackend, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('green-bubble-text', greenBubbleText);
     saveDataToBackend();
-  }, [greenBubbleText, saveDataToBackend]);
+  }, [greenBubbleText, saveDataToBackend, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     localStorage.setItem('our-memory-photo', photoData);
     saveDataToBackend();
-  }, [photoData, saveDataToBackend]);
+  }, [photoData, saveDataToBackend, isAuthenticated]);
 
   useEffect(() => {
+      if (!isAuthenticated) return;
       if (customLibrary.length > 0) {
           localStorage.setItem('my-custom-stickers', JSON.stringify(customLibrary));
+          saveDataToBackend();
       }
-  }, [customLibrary]);
+  }, [customLibrary, saveDataToBackend, isAuthenticated]);
 
 
   // --- HANDLERS ---
@@ -397,10 +420,23 @@ const App: React.FC = () => {
     };
   }, [interaction.mode, handleGlobalMove, handleGlobalEnd]);
 
+  // --- RENDER ---
+
+  if (!isAuthenticated) {
+      return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 relative overflow-x-hidden bg-grid-pattern pb-32">
       
+      {/* Live Indicator */}
+      <div className="fixed top-4 right-4 z-[90] flex items-center gap-2 pointer-events-none">
+          <div className={`w-3 h-3 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${isLive ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {isLive ? 'Live Sync' : 'Offline'}
+          </span>
+      </div>
+
       <StickerMenu 
         stickerLibrary={[...AVAILABLE_STICKERS, ...customLibrary]} 
         onAddStickerToCanvas={addStickerToCanvas} 
