@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
-import { ImageOff, Scaling, RotateCw } from 'lucide-react';
+import { ImageOff, Scaling, RotateCw, X } from 'lucide-react';
 
 export interface StickerData {
   id: string;
-  type: 'image'; // Unified type
-  src: string;   // URL or base64
+  type: 'image';
+  src: string;
   x: number;
   y: number;
   rotation: number;
@@ -23,19 +23,10 @@ const DraggableSticker: React.FC<DraggableStickerProps> = ({ data, onMouseDown, 
   const [hasError, setHasError] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
-    // Only trigger drag if we didn't click the resize/rotate handle (handled by propagation stop there, but safe check here)
-    onMouseDown(e, data.id);
-  };
-
-  const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation(); // Prevent drag start
-    onResizeStart(e, data.id);
-  };
-
-  const handleRotateStart = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation(); // Prevent drag start
-    onRotateStart(e, data.id);
+  // Prevent dragging when clicking a handle
+  const stopProp = (e: React.MouseEvent | React.TouchEvent, cb: (e: any, id: string) => void) => {
+      e.stopPropagation();
+      cb(e, data.id);
   };
 
   const style: React.CSSProperties = {
@@ -44,64 +35,57 @@ const DraggableSticker: React.FC<DraggableStickerProps> = ({ data, onMouseDown, 
     top: data.y,
     transform: `rotate(${data.rotation}deg) scale(${data.scale})`,
     cursor: 'grab',
-    userSelect: 'none',
     touchAction: 'none',
     zIndex: 20,
+    width: '100px', 
+    height: '100px'
   };
 
   return (
     <div 
-        id={data.id} // Added DOM ID for interaction logic
+        id={data.id}
         style={style} 
-        className="w-24 h-24 group"
-        onMouseDown={handleStart}
-        onTouchStart={handleStart}
+        className="group"
+        onMouseDown={(e) => onMouseDown(e, data.id)}
+        onTouchStart={(e) => onMouseDown(e, data.id)}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="relative w-full h-full transition-[filter] hover:brightness-110 active:cursor-grabbing">
+      <div className="relative w-full h-full">
         {!hasError ? (
             <img 
                 src={data.src} 
                 alt="sticker" 
                 onError={() => setHasError(true)}
-                className="w-full h-full object-contain pointer-events-none drop-shadow-md select-none"
+                className="w-full h-full object-contain pointer-events-none drop-shadow-md select-none transition-transform hover:scale-105"
                 draggable={false} 
             />
         ) : (
-            // Fallback placeholder
             <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100/50 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 p-2">
                 <ImageOff size={24} />
-                <span className="text-[10px] font-mono text-center leading-tight mt-1">Missing<br/>{data.src.split('/').pop()}</span>
             </div>
         )}
         
-        {/* Resize Handle - Bottom Right */}
-        <div 
-            className={`
-                absolute -bottom-2 -right-2 bg-white text-slate-800 rounded-full p-1.5 shadow-md border-2 border-slate-800 cursor-nwse-resize
-                transition-all duration-200 z-30 hover:bg-yellow-100 hover:scale-110
-                ${isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-50 sm:opacity-0 sm:group-hover:opacity-100'}
-            `}
-            onMouseDown={handleResizeStart}
-            onTouchStart={handleResizeStart}
-            title="Resize"
-        >
-            <Scaling size={14} strokeWidth={3} />
-        </div>
+        {/* Handles - Visible on Hover or Interaction */}
+        <div className={`transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0 sm:opacity-0'}`}>
+            
+            {/* Resize Handle - Bottom Right */}
+            <div 
+                className="absolute -bottom-3 -right-3 bg-white text-slate-800 rounded-full p-2 shadow-md border-2 border-slate-800 cursor-nwse-resize z-30 hover:bg-yellow-200 hover:scale-110 active:scale-95"
+                onMouseDown={(e) => stopProp(e, onResizeStart)}
+                onTouchStart={(e) => stopProp(e, onResizeStart)}
+            >
+                <Scaling size={16} strokeWidth={2.5} />
+            </div>
 
-        {/* Rotate Handle - Top Right */}
-        <div 
-            className={`
-                absolute -top-3 -right-3 bg-white text-slate-800 rounded-full p-1.5 shadow-md border-2 border-slate-800 cursor-alias
-                transition-all duration-200 z-30 hover:bg-blue-100 hover:scale-110
-                ${isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-50 sm:opacity-0 sm:group-hover:opacity-100'}
-            `}
-            onMouseDown={handleRotateStart}
-            onTouchStart={handleRotateStart}
-            title="Rotate"
-        >
-            <RotateCw size={14} strokeWidth={3} />
+            {/* Rotate Handle - Top Right */}
+            <div 
+                className="absolute -top-3 -right-3 bg-white text-slate-800 rounded-full p-2 shadow-md border-2 border-slate-800 cursor-alias z-30 hover:bg-sky-200 hover:scale-110 active:scale-95"
+                onMouseDown={(e) => stopProp(e, onRotateStart)}
+                onTouchStart={(e) => stopProp(e, onRotateStart)}
+            >
+                <RotateCw size={16} strokeWidth={2.5} />
+            </div>
         </div>
 
       </div>

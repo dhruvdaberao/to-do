@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { Plus, LogIn } from 'lucide-react';
+import { Plus, LogIn, LogOut } from 'lucide-react';
 
 interface DashboardProps {
   username: string;
@@ -10,12 +11,10 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) => {
   const [mode, setMode] = useState<'MENU' | 'CREATE' | 'JOIN'>('MENU');
   
-  // Create State
   const [newRoomId, setNewRoomId] = useState('');
   const [newPin, setNewPin] = useState('');
   const [date, setDate] = useState('');
   
-  // Join State
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinPin, setJoinPin] = useState('');
 
@@ -68,10 +67,14 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
     });
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('app_user');
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-grid-pattern flex flex-col items-center justify-center p-4">
       
-      {/* Welcome Banner */}
       <div className="mb-8 text-center">
         <h1 className="font-marker text-5xl text-slate-900 mb-2">Hello, {username}!</h1>
         <p className="font-hand text-xl text-slate-500 font-bold">Ready to make some memories?</p>
@@ -101,6 +104,13 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                         <p className="font-hand text-sm font-bold opacity-80">Enter Room ID & PIN</p>
                     </div>
                     <LogIn size={32} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+
+                <button 
+                    onClick={handleLogout}
+                    className="mt-4 flex items-center justify-center gap-2 text-slate-400 hover:text-rose-500 font-bold font-hand transition-colors"
+                >
+                    <LogOut size={16} /> Logout
                 </button>
             </>
         )}
