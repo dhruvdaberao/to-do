@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, User, Lock, Sparkles } from 'lucide-react';
+import { ArrowRight, User, Lock } from 'lucide-react';
 
 interface AuthScreenProps {
   onAuthenticate: (user: { username: string }) => void;
@@ -30,16 +30,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
 
       const contentType = res.headers.get("content-type");
       
+      // If server returns error, try to parse JSON for the specific message
       if (!res.ok) {
-          // Attempt to read JSON error from backend
           if (contentType && contentType.includes("application/json")) {
               const errData = await res.json();
-              throw new Error(errData.error || `Error ${res.status}`);
+              throw new Error(errData.error || `Server Error ${res.status}`);
           }
-          // Fallback for 404/500 HTML responses
-          if (res.status === 404) throw new Error("Backend not found (404). Check if 'api/data.js' exists.");
-          if (res.status === 500) throw new Error("Server Error (500). Check MONGO_URI in Vercel.");
-          throw new Error(`Server connection failed (${res.status})`);
+          if (res.status === 404) throw new Error("Backend not found (404). The file 'api/data.js' is missing from your deployment.");
+          if (res.status === 500) throw new Error("Database Error (500). Check MONGO_URI in Vercel or IP Access.");
+          throw new Error(`Connection failed (${res.status})`);
       }
       
       const data = await res.json();
@@ -58,7 +57,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
   };
 
   return (
-    <div className="min-h-screen bg-grid-pattern flex items-center justify-center p-4">
+    <div className="min-h-screen bg-grid-pattern flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-white border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] rounded-xl overflow-hidden transform rotate-1">
         
         {/* Header */}
@@ -74,7 +73,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-8 flex flex-col gap-4">
             {error && (
-              <div className="bg-rose-100 text-rose-600 p-3 rounded-lg font-hand font-bold text-center border-2 border-rose-200 text-sm">
+              <div className="bg-rose-100 text-rose-600 p-3 rounded-lg font-hand font-bold text-center border-2 border-rose-200 text-sm leading-tight break-words">
                 {error}
               </div>
             )}
@@ -118,7 +117,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
             <button 
               type="button"
               onClick={() => { setIsRegister(!isRegister); setError(''); }}
-              className="text-slate-500 font-bold hover:text-slate-900 underline decoration-wavy decoration-rose-400 underline-offset-4"
+              className="text-slate-500 font-bold hover:text-slate-900 hover:underline underline-offset-4"
             >
               {isRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
             </button>

@@ -1,26 +1,27 @@
-# CRITICAL DEPLOYMENT STEP
+# CRITICAL FIX FOR 500 ERROR
 
-If you are seeing "Connection Error" or "500 Error", it means Vercel cannot talk to your database.
+If you see "Connection Error" or "Server Error (500)", check these 3 things:
 
-1. **Verify Backend Exists**:
-   Ensure you have a file named `api/data.js` in your project root. (I have created this for you in this update).
+1. **IP ACCESS (Most Common)**
+   - Go to MongoDB Atlas > Network Access.
+   - You MUST have `0.0.0.0/0` (Allow Anywhere).
+   - If it says "Current IP", delete it and add `0.0.0.0/0`.
 
-2. **Add Environment Variable**:
-   - Go to your Vercel Dashboard -> Project -> Settings -> Environment Variables.
+2. **PACKAGE.JSON DEPENDENCIES**
+   - Check your `package.json` file in GitHub.
+   - It MUST include:
+     ```json
+     "dependencies": {
+       "mongoose": "^8.0.0"
+     }
+     ```
+   - If missing, Vercel will fail silently or give 500 error. Run `npm install mongoose` and push again.
+
+3. **VERCEL ENVIRONMENT VARIABLES**
+   - Check Settings > Environment Variables.
    - Key: `MONGO_URI`
-   - Value: `your-mongodb-connection-string` (e.g., mongodb+srv://user:pass@cluster0...)
-   - Click "Save".
-
-3. **Redeploy**:
-   - Push a small change to GitHub OR go to Vercel -> Deployments -> Redeploy to ensure the new variable is picked up.
+   - Value: `mongodb+srv://...` (Your connection string)
 
 ---
-
-# DEPENDENCIES
-Make sure `package.json` includes:
-```json
-"dependencies": {
-  "mongoose": "^8.0.0"
-}
-```
-Run `npm install mongoose` if running locally.
+# API FOLDER
+Ensure `api/data.js` exists in the ROOT of your repository, not inside `src`.

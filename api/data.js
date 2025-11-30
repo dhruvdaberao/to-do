@@ -7,15 +7,23 @@ const connectToDatabase = async () => {
   if (isConnected) return;
   
   if (!process.env.MONGO_URI) {
-    throw new Error('MONGO_URI environment variable is missing in Vercel Settings');
+    throw new Error('MONGO_URI is undefined in Vercel Environment Variables.');
   }
 
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    console.log("Attempting to connect to MongoDB...");
+    // connect with options to prevent timeout issues
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 5000, // Fail fast if IP is blocked
+    });
     isConnected = true;
-    console.log("Connected to MongoDB");
+    console.log("Connected to MongoDB successfully");
   } catch (err) {
     console.error("MongoDB Connection Error:", err);
+    // Throwing with specific message to help user debug
+    if (err.name === 'MongooseServerSelectionError') {
+      throw new Error('IP Address Blocked by MongoDB. Go to Network Access > Add IP > Allow 0.0.0.0/0');
+    }
     throw err;
   }
 };
@@ -69,6 +77,11 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
+  }
+
+  // Health Check (GET request)
+  if (req.method === 'GET') {
+     return res.status(200).json({ status: 'API is running' });
   }
 
   try {
@@ -151,7 +164,11 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Invalid action' });
 
   } catch (error) {
-    console.error("Server Error:", error);
-    return res.status(500).json({ error: error.message || "Internal Server Error" });
+    console.error("Server Logic Error:", error);
+    // Return specific error message for debugging on frontend
+    return res.status(500).json({ 
+      error: error.message || "Internal Server Error",
+      details: "Check Vercel Logs for more info."
+    });
   }
 };
