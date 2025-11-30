@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ArrowRight, User, Lock, Sparkles } from 'lucide-react';
 
@@ -28,15 +27,31 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
           payload: { username, password }
         })
       });
+
+      const contentType = res.headers.get("content-type");
+      
+      if (!res.ok) {
+          // Attempt to read JSON error from backend
+          if (contentType && contentType.includes("application/json")) {
+              const errData = await res.json();
+              throw new Error(errData.error || `Error ${res.status}`);
+          }
+          // Fallback for 404/500 HTML responses
+          if (res.status === 404) throw new Error("Backend not found (404). Check if 'api/data.js' exists.");
+          if (res.status === 500) throw new Error("Server Error (500). Check MONGO_URI in Vercel.");
+          throw new Error(`Server connection failed (${res.status})`);
+      }
+      
       const data = await res.json();
       
-      if (res.ok && data.success) {
+      if (data.success) {
         onAuthenticate({ username });
       } else {
-        setError(data.error || 'Authentication failed');
+        throw new Error(data.error || 'Authentication failed');
       }
-    } catch (err) {
-      setError('Connection error. Is the backend running?');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Connection error. Is the backend running?');
     } finally {
       setLoading(false);
     }
@@ -59,7 +74,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticate, apiUrl }) => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-8 flex flex-col gap-4">
             {error && (
-              <div className="bg-rose-100 text-rose-600 p-3 rounded-lg font-hand font-bold text-center border-2 border-rose-200">
+              <div className="bg-rose-100 text-rose-600 p-3 rounded-lg font-hand font-bold text-center border-2 border-rose-200 text-sm">
                 {error}
               </div>
             )}

@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Calendar, KeyRound, Plus, LogIn } from 'lucide-react';
+import { Plus, LogIn } from 'lucide-react';
 
 interface DashboardProps {
   username: string;
@@ -23,60 +22,50 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    // Parse date
-    const d = new Date(date);
-    const targetDate = { 
-        month: d.getMonth(), // 0-indexed
-        day: d.getDate(),
-        year: d.getFullYear()
-    };
-
-    try {
+  const handleFetch = async (payload: any) => {
+      setLoading(true);
+      setError('');
+      try {
         const res = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'CREATE_ROOM',
-                payload: { roomId: newRoomId, pin: newPin, targetDate, creatorId: username }
-            })
+            body: JSON.stringify(payload)
         });
+        
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text.includes('error') ? JSON.parse(text).error : `Error ${res.status}`);
+        }
+        
         const data = await res.json();
         if (data.success) {
             onJoinRoom(data.room);
         } else {
             setError(data.error);
         }
-    } catch (e) { setError('Network Error'); }
-    setLoading(false);
+      } catch (e: any) {
+        setError(e.message || 'Connection Failed');
+      } finally {
+        setLoading(false);
+      }
   };
 
-  const handleJoin = async (e: React.FormEvent) => {
+  const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    const d = new Date(date);
+    const targetDate = { month: d.getMonth(), day: d.getDate(), year: d.getFullYear() };
+    handleFetch({
+        action: 'CREATE_ROOM',
+        payload: { roomId: newRoomId, pin: newPin, targetDate, creatorId: username }
+    });
+  };
 
-    try {
-        const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'JOIN_ROOM',
-                payload: { roomId: joinRoomId, pin: joinPin, username }
-            })
-        });
-        const data = await res.json();
-        if (data.success) {
-            onJoinRoom(data.room);
-        } else {
-            setError(data.error);
-        }
-    } catch (e) { setError('Network Error'); }
-    setLoading(false);
+  const handleJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleFetch({
+        action: 'JOIN_ROOM',
+        payload: { roomId: joinRoomId, pin: joinPin, username }
+    });
   };
 
   return (
@@ -119,7 +108,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
         {mode === 'CREATE' && (
             <form onSubmit={handleCreate} className="flex flex-col gap-4">
                 <h3 className="font-marker text-2xl text-center mb-2">Create New Room</h3>
-                {error && <p className="text-rose-500 text-center font-bold">{error}</p>}
+                {error && <p className="bg-rose-100 text-rose-600 p-2 rounded-lg text-center font-bold text-sm border border-rose-200">{error}</p>}
                 
                 <input 
                     type="text" placeholder="Room Name (ID)" value={newRoomId} onChange={e => setNewRoomId(e.target.value)}
@@ -148,7 +137,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
         {mode === 'JOIN' && (
             <form onSubmit={handleJoin} className="flex flex-col gap-4">
                 <h3 className="font-marker text-2xl text-center mb-2">Join Room</h3>
-                {error && <p className="text-rose-500 text-center font-bold">{error}</p>}
+                {error && <p className="bg-rose-100 text-rose-600 p-2 rounded-lg text-center font-bold text-sm border border-rose-200">{error}</p>}
                 
                 <input 
                     type="text" placeholder="Room Name (ID)" value={joinRoomId} onChange={e => setJoinRoomId(e.target.value)}

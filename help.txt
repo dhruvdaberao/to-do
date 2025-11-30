@@ -1,145 +1,26 @@
+# CRITICAL DEPLOYMENT STEP
 
-# HOW TO DEPLOY: THE "SINGLE REPO" METHOD (EASIEST)
+If you are seeing "Connection Error" or "500 Error", it means Vercel cannot talk to your database.
 
-This method allows you to host both your Website (Frontend) and your Database Connection (Backend) in the SAME Vercel project.
+1. **Verify Backend Exists**:
+   Ensure you have a file named `api/data.js` in your project root. (I have created this for you in this update).
 
-You do NOT need a separate backend repository.
+2. **Add Environment Variable**:
+   - Go to your Vercel Dashboard -> Project -> Settings -> Environment Variables.
+   - Key: `MONGO_URI`
+   - Value: `your-mongodb-connection-string` (e.g., mongodb+srv://user:pass@cluster0...)
+   - Click "Save".
+
+3. **Redeploy**:
+   - Push a small change to GitHub OR go to Vercel -> Deployments -> Redeploy to ensure the new variable is picked up.
 
 ---
 
-## STEP 1: PREPARE YOUR PROJECT
-
-1. Open your project terminal (VS Code).
-2. Install Mongoose (required to talk to MongoDB):
-   Run this command:
-   `npm install mongoose`
-
----
-
-## STEP 2: CREATE THE API BACKEND
-
-Vercel automatically treats any file inside a folder named `api` as a backend serverless function.
-
-1. Create a new folder named `api` in the root of your project (at the same level as `src`, `package.json`, etc.).
-2. Inside that folder, create a new file named `data.js`.
-   Path: `your-project/api/data.js`
-
-3. **COPY AND PASTE THIS EXACT CODE INTO `api/data.js`:**
-
-```javascript
-const mongoose = require('mongoose');
-
-// --- 1. CONFIGURATION ---
-// We cache the connection so we don't reconnect on every request
-let isConnected = false;
-
-const connectToDatabase = async () => {
-  if (isConnected) {
-    console.log('=> Using existing database connection');
-    return;
-  }
-
-  if (!process.env.MONGO_URI) {
-    throw new Error('MONGO_URI environment variable is missing in Vercel!');
-  }
-
-  console.log('=> Using new database connection');
-  // Connect to MongoDB
-  await mongoose.connect(process.env.MONGO_URI);
-  isConnected = true;
-};
-
-// --- 2. DATABASE SCHEMA ---
-// This defines what our data looks like in MongoDB
-const AppDataSchema = new mongoose.Schema({
-  id: { type: String, default: 'main_room' }, // We use one ID to sync everyone to the same room
-  stickers: Array,
-  todoItems: Array,
-  noteState: Object,
-  redBubble: String,
-  greenBubble: String,
-  photo: String,
-  customLibrary: Array // SYNCED: Uploaded custom stickers appear for both users
-});
-
-// Prevent model recompilation error in serverless environment
-let AppData;
-try {
-  AppData = mongoose.model('AppData');
-} catch {
-  AppData = mongoose.model('AppData', AppDataSchema);
+# DEPENDENCIES
+Make sure `package.json` includes:
+```json
+"dependencies": {
+  "mongoose": "^8.0.0"
 }
-
-// --- 3. THE SERVERLESS HANDLER ---
-// This function runs every time the frontend requests data
-module.exports = async (req, res) => {
-  // Setup CORS to allow your frontend to talk to this backend
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
-
-  // Handle the "Preflight" check from the browser
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  try {
-    // Connect to DB
-    await connectToDatabase();
-
-    // GET Request: Frontend asking for latest data
-    if (req.method === 'GET') {
-      let data = await AppData.findOne({ id: 'main_room' });
-      // If no data exists yet, create the initial empty record
-      if (!data) {
-        data = await AppData.create({ id: 'main_room' });
-      }
-      return res.status(200).json(data);
-    }
-
-    // POST Request: Frontend sending new data to save
-    if (req.method === 'POST') {
-      const payload = req.body;
-      // Update the data in MongoDB
-      await AppData.findOneAndUpdate({ id: 'main_room' }, payload, { upsert: true });
-      return res.status(200).json({ success: true });
-    }
-
-  } catch (error) {
-    console.error("Database Error:", error);
-    return res.status(500).json({ error: error.message });
-  }
-};
 ```
-
----
-
-## STEP 3: DEPLOY TO VERCEL
-
-1. Push your latest code (including the new `api` folder) to GitHub.
-2. Vercel will detect the push and redeploy automatically.
-
----
-
-## STEP 4: CONNECT THE DATABASE
-
-1. Go to your project dashboard on **Vercel**.
-2. Click **Settings** > **Environment Variables**.
-3. Add a new variable:
-   - **Key**: `MONGO_URI`
-   - **Value**: *(Your MongoDB Connection String)*
-4. Click **Save**.
-5. **IMPORTANT**: Go to the **Deployments** tab and click **Redeploy** on the latest commit so the new variable takes effect.
-
----
-
-## WHAT TO DO NEXT
-
-1. **Update your local files**: I have updated the `App.tsx` logic for you.
-2. **Update your backend**: Copy the code above into your `api/data.js` file (especially the schema part that now includes `customLibrary`).
-3. **Push to GitHub**: This will update your live site.
+Run `npm install mongoose` if running locally.

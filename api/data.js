@@ -5,9 +5,19 @@ let isConnected = false;
 
 const connectToDatabase = async () => {
   if (isConnected) return;
-  if (!process.env.MONGO_URI) throw new Error('MONGO_URI missing');
-  await mongoose.connect(process.env.MONGO_URI);
-  isConnected = true;
+  
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI environment variable is missing in Vercel Settings');
+  }
+
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    isConnected = true;
+    console.log("Connected to MongoDB");
+  } catch (err) {
+    console.error("MongoDB Connection Error:", err);
+    throw err;
+  }
 };
 
 // --- 2. SCHEMAS ---
@@ -15,17 +25,17 @@ const connectToDatabase = async () => {
 // User Schema
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
-  password: { type: String, required: true }, // Simple plain text for this demo (use bcrypt in prod)
+  password: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-// Room Schema (The Countdown)
+// Room Schema
 const RoomSchema = new mongoose.Schema({
-  roomId: { type: String, required: true, unique: true }, // Unique ID
-  pin: { type: String, required: true }, // 4 Digit PIN
-  targetDate: { type: Object, required: true }, // { month, day, year }
+  roomId: { type: String, required: true, unique: true },
+  pin: { type: String, required: true },
+  targetDate: { type: Object, required: true },
   creatorId: String,
-  members: [String], // Array of usernames
+  members: [String],
   
   // App State
   stickers: { type: Array, default: [] },
@@ -34,10 +44,8 @@ const RoomSchema = new mongoose.Schema({
   redBubble: { type: String, default: '' },
   greenBubble: { type: String, default: '' },
   photo: { type: String, default: 'us.png' },
-  customLibrary: { type: Array, default: [] }, // Shared sticker library
-  
-  // Chat
-  chatMessages: { type: Array, default: [] } // { id, user, text, timestamp }
+  customLibrary: { type: Array, default: [] },
+  chatMessages: { type: Array, default: [] }
 });
 
 // Models
@@ -68,7 +76,6 @@ module.exports = async (req, res) => {
     const { action, payload } = req.body;
 
     // --- AUTH ROUTES ---
-    
     if (action === 'REGISTER') {
       const { username, password } = payload;
       const existing = await User.findOne({ username });
@@ -85,7 +92,6 @@ module.exports = async (req, res) => {
     }
 
     // --- ROOM ROUTES ---
-
     if (action === 'CREATE_ROOM') {
       const { roomId, pin, targetDate, creatorId } = payload;
       const existing = await Room.findOne({ roomId });
@@ -107,7 +113,6 @@ module.exports = async (req, res) => {
       if (!room) return res.status(404).json({ error: 'Room not found' });
       if (room.pin !== pin) return res.status(403).json({ error: 'Invalid PIN' });
       
-      // Add member if not exists
       if (!room.members.includes(username)) {
         room.members.push(username);
         await room.save();
@@ -124,7 +129,6 @@ module.exports = async (req, res) => {
 
     if (action === 'SYNC_ROOM') {
       const { roomId, updates } = payload;
-      // updates contains partial data (e.g. only stickers, or only chat)
       const room = await Room.findOneAndUpdate({ roomId }, { $set: updates }, { new: true });
       return res.status(200).json({ success: true });
     }
@@ -139,17 +143,15 @@ module.exports = async (req, res) => {
           redBubble: '',
           greenBubble: '',
           photo: 'us.png',
-          // Note: We do NOT clear customLibrary or chatMessages
         }
       });
       return res.status(200).json({ success: true });
     }
     
-    // Fallback
     return res.status(400).json({ error: 'Invalid action' });
 
   } catch (error) {
     console.error("Server Error:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 };
