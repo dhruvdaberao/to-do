@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 // --- 1. CONFIGURATION & CACHING ---
 // Cache the connection to prevent cold-start issues in Vercel
@@ -83,7 +83,7 @@ try {
 }
 
 // --- 3. SERVERLESS HANDLER ---
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   // CORS Handling
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -184,4 +184,4 @@ module.exports = async (req, res) => {
       details: error.message 
     });
   }
-};
+}
