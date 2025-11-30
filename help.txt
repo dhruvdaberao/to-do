@@ -1,27 +1,24 @@
-# CRITICAL FIX FOR 500 ERROR
 
-If you see "Connection Error" or "Server Error (500)", check these 3 things:
+# CRITICAL DATABASE FIX (DUPLICATE KEY ERROR)
 
-1. **IP ACCESS (Most Common)**
-   - Go to MongoDB Atlas > Network Access.
-   - You MUST have `0.0.0.0/0` (Allow Anywhere).
-   - If it says "Current IP", delete it and add `0.0.0.0/0`.
+If you see "E11000 duplicate key error... email_1 dup key":
 
-2. **PACKAGE.JSON DEPENDENCIES**
-   - Check your `package.json` file in GitHub.
-   - It MUST include:
-     ```json
-     "dependencies": {
-       "mongoose": "^8.0.0"
-     }
-     ```
-   - If missing, Vercel will fail silently or give 500 error. Run `npm install mongoose` and push again.
+**YOU MUST CHANGE THE DATABASE NAME IN VERCEL.**
 
-3. **VERCEL ENVIRONMENT VARIABLES**
-   - Check Settings > Environment Variables.
-   - Key: `MONGO_URI`
-   - Value: `mongodb+srv://...` (Your connection string)
+1. Go to Vercel Dashboard -> Your Project -> Settings -> Environment Variables.
+2. Edit `MONGO_URI`.
+3. Look for the part that says `...mongodb.net/test?...` or `...mongodb.net/myFirstDatabase?...`.
+4. CHANGE the word after the slash to something unique.
+   Example: `...mongodb.net/july6app?...`
+5. Save and Redeploy (or just restart the app).
+
+This forces MongoDB to create a fresh database without the old "email" requirement that is breaking your user registration.
 
 ---
+
 # API FOLDER
-Ensure `api/data.js` exists in the ROOT of your repository, not inside `src`.
+Ensure `api/data.js` exists in the ROOT of your repository.
+It uses `import` syntax.
+
+# IP ACCESS
+Ensure MongoDB Atlas Network Access is set to `0.0.0.0/0`.

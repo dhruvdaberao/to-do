@@ -14,6 +14,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   const [newRoomId, setNewRoomId] = useState('');
   const [newPin, setNewPin] = useState('');
   const [date, setDate] = useState('');
+  const [time, setTime] = useState('00:00');
   
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinPin, setJoinPin] = useState('');
@@ -51,11 +52,13 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    const d = new Date(date);
-    const targetDate = { month: d.getMonth(), day: d.getDate(), year: d.getFullYear() };
+    // Combine Date and Time into ISO string
+    const combined = new Date(`${date}T${time}`);
+    const targetISO = combined.toISOString();
+
     handleFetch({
         action: 'CREATE_ROOM',
-        payload: { roomId: newRoomId, pin: newPin, targetDate, creatorId: username }
+        payload: { roomId: newRoomId, pin: newPin, targetISO, creatorId: username }
     });
   };
 
@@ -127,10 +130,16 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                 <div className="flex gap-2">
                     <input 
                         type="text" placeholder="4-Digit PIN" maxLength={4} value={newPin} onChange={e => setNewPin(e.target.value)}
+                        className="border-2 border-slate-200 p-3 rounded-lg font-bold w-full" required
+                    />
+                </div>
+                <div className="flex gap-2">
+                    <input 
+                        type="date" value={date} onChange={e => setDate(e.target.value)}
                         className="border-2 border-slate-200 p-3 rounded-lg font-bold w-1/2" required
                     />
                     <input 
-                        type="date" value={date} onChange={e => setDate(e.target.value)}
+                        type="time" value={time} onChange={e => setTime(e.target.value)}
                         className="border-2 border-slate-200 p-3 rounded-lg font-bold w-1/2" required
                     />
                 </div>

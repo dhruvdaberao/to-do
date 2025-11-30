@@ -34,6 +34,9 @@ const connectToDatabase = async () => {
 };
 
 // --- 2. SCHEMAS ---
+// Note: We use { strict: false } to allow flexibility if schema changes, 
+// but we define fields for clarity.
+
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -43,14 +46,13 @@ const UserSchema = new mongoose.Schema({
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   pin: { type: String, required: true },
-  targetDate: { type: Object, required: true },
+  targetISO: { type: String }, // NEW: Full ISO Date String (Date + Time)
+  targetDate: { type: Object }, // Legacy: Keep for backward compatibility if needed
   creatorId: String,
   members: [String],
   stickers: { type: Array, default: [] },
-  todoItems: { type: Array, default: [] }, // Default is now empty
+  todoItems: { type: Array, default: [] },
   noteState: { type: Object, default: { x: 0, y: 0, rotation: -2, scale: 1 } },
-  redBubble: { type: String, default: '' },
-  greenBubble: { type: String, default: '' },
   photo: { type: String, default: 'us.png' },
   customLibrary: { type: Array, default: [] },
   chatMessages: { type: Array, default: [] }
@@ -96,11 +98,18 @@ export default async function handler(req, res) {
     }
 
     if (action === 'CREATE_ROOM') {
-      const { roomId, pin, targetDate, creatorId } = payload;
+      const { roomId, pin, targetISO, creatorId } = payload;
       const existing = await Room.findOne({ roomId });
       if (existing) return res.status(400).json({ error: 'Room Name already exists' });
       
-      const newRoom = await Room.create({ roomId, pin, targetDate, creatorId, members: [creatorId] });
+      const newRoom = await Room.create({ 
+          roomId, 
+          pin, 
+          targetISO, // Save the new time format
+          targetDate: {}, // Dummy object for legacy schema satisfaction
+          creatorId, 
+          members: [creatorId] 
+      });
       return res.status(200).json({ success: true, room: newRoom });
     }
 
@@ -132,7 +141,6 @@ export default async function handler(req, res) {
 
     if (action === 'CLEAR_CANVAS') {
       const { roomId } = payload;
-      // Force reset of arrays
       await Room.findOneAndUpdate({ roomId }, {
         $set: {
           stickers: [],
@@ -148,6 +156,10 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("API Logic Error:", error);
+    // Return friendly error for duplicate key
+    if (error.code === 11000) {
+        return res.status(400).json({ error: "Username or Room ID already taken (Duplicate Key)", details: error.message });
+    }
     return res.status(500).json({ error: "Backend Error", details: error.message });
   }
 }
