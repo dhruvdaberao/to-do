@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, MessageCircle, Users, LogOut, Eraser } from 'lucide-react';
+import { Heart, MessageCircle, Users, LogOut, Eraser, Share2 } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, formatDateDisplay } from '../utils/time';
 import CountdownTimer from './CountdownTimer';
 import TapedPhoto from './TapedPhoto';
@@ -182,6 +181,13 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       pushUpdates({ customLibrary: newLib });
   };
 
+  const handleShare = () => {
+      const invite = `Join my Countdown!\nRoom: ${room.roomId}\nPIN: ${room.pin}\nLink: ${window.location.origin}`;
+      navigator.clipboard.writeText(invite);
+      triggerNotification("Copied!", "Invite info copied to clipboard.");
+      alert("Invite copied to clipboard!\nShare it with your partner.");
+  };
+
   // --- INTERACTION ENGINE ---
 
   const handleInteractionStart = (e: any, id: string, mode: InteractionMode) => {
@@ -266,6 +272,10 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
         {/* --- QUIRKY TOOLBAR --- */}
         <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3">
+             <button onClick={handleShare} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
+                <Share2 size={24} strokeWidth={2.5} className="text-slate-900" />
+             </button>
+
              <button onClick={() => setIsPeopleOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <Users size={24} strokeWidth={2.5} className="text-slate-900 group-hover:text-blue-500" />
              </button>

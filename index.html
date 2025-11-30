@@ -30,6 +30,15 @@
         }
       }
     </script>
+    <style>
+      /* Custom Grid Background */
+      .bg-grid-pattern {
+        background-color: #fdfbf7;
+        /* Made grid lines darker (cbd5e1) so they are clearly visible */
+        background-image: linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+    </style>
     <script type="importmap">
 {
   "imports": {
@@ -44,7 +53,6 @@
 </head>
   <body class="bg-grid-pattern text-slate-800 antialiased min-h-screen">
     <div id="root"></div>
-    <!-- THIS SCRIPT WAS MISSING. IT IS REQUIRED TO RUN THE APP. -->
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>
