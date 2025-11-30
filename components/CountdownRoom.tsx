@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, MessageCircle, Users, LogOut, Eraser, Share2 } from 'lucide-react';
+import { Heart, MessageCircle, Users, LogOut, Eraser, Share2, Sparkles } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, formatDateDisplay } from '../utils/time';
 import CountdownTimer from './CountdownTimer';
 import TapedPhoto from './TapedPhoto';
@@ -10,6 +11,7 @@ import TrashBin from './TrashBin';
 import TodoModal from './TodoModal';
 import ChatDrawer from './ChatDrawer';
 import PeopleList from './PeopleList';
+import ShareModal from './ShareModal';
 import Confetti from './Confetti';
 import { AVAILABLE_STICKERS, StickerDefinition } from './Doodles';
 
@@ -46,6 +48,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isPeopleOpen, setIsPeopleOpen] = useState(false);
   const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isStickerMenuOpen, setIsStickerMenuOpen] = useState(false);
   const [hasUnreadMsg, setHasUnreadMsg] = useState(false);
   
   // Interaction Engine State
@@ -128,7 +132,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
   // Polling & Timer
   useEffect(() => {
-    // If targetISO is present, use it. Otherwise fallback to old object style (legacy support)
     const target = room.targetISO || new Date(room.targetDate.year, room.targetDate.month, room.targetDate.day).toISOString();
     
     const tick = () => setTimeLeft(calculateTimeLeft(target));
@@ -138,12 +141,10 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     return () => { clearInterval(timer); clearInterval(poller); };
   }, [room]);
 
-  // Handle Chat Open Clears Unread
   useEffect(() => {
     if (isChatOpen) setHasUnreadMsg(false);
   }, [isChatOpen]);
 
-  // Immediate Save for Lists/Photos
   const updateTodoItems = (items: string[]) => {
       setTodoItems(items);
       pushUpdates({ todoItems: items });
@@ -179,13 +180,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       const newLib = customLibrary.filter(s => s.id !== id);
       setCustomLibrary(newLib);
       pushUpdates({ customLibrary: newLib });
-  };
-
-  const handleShare = () => {
-      const invite = `Join my Countdown!\nRoom: ${room.roomId}\nPIN: ${room.pin}\nLink: ${window.location.origin}`;
-      navigator.clipboard.writeText(invite);
-      triggerNotification("Copied!", "Invite info copied to clipboard.");
-      alert("Invite copied to clipboard!\nShare it with your partner.");
   };
 
   // --- INTERACTION ENGINE ---
@@ -267,34 +261,45 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   return (
     <div className="min-h-screen w-full flex flex-col items-center p-4 sm:p-6 relative overflow-x-hidden bg-grid-pattern pb-40">
         
-        {/* CONFETTI */}
         {timeLeft.isAnniversary && <Confetti />}
 
         {/* --- QUIRKY TOOLBAR --- */}
-        <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3">
-             <button onClick={handleShare} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
+        <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3 flex-wrap justify-end">
+             {/* Sticker Button */}
+             <button onClick={() => setIsStickerMenuOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
+                <Sparkles size={24} strokeWidth={2.5} className="text-slate-900" />
+             </button>
+
+             {/* Share Button */}
+             <button onClick={() => setIsShareOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <Share2 size={24} strokeWidth={2.5} className="text-slate-900" />
              </button>
 
+             {/* People Button */}
              <button onClick={() => setIsPeopleOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <Users size={24} strokeWidth={2.5} className="text-slate-900 group-hover:text-blue-500" />
              </button>
 
+             {/* Chat Button */}
              <button onClick={() => setIsChatOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <MessageCircle size={24} strokeWidth={2.5} className="text-slate-900 group-hover:text-green-500" />
                 {hasUnreadMsg && <span className="absolute -top-2 -right-2 w-4 h-4 bg-rose-500 rounded-full border-2 border-white animate-bounce"></span>}
              </button>
 
+             {/* Eraser Button */}
              <button onClick={handleClearPage} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-rose-100 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <Eraser size={24} strokeWidth={2.5} className="text-rose-600" />
              </button>
 
+             {/* Exit Button */}
              <button onClick={onExit} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-slate-900 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(255,255,255,0.5)] flex items-center justify-center hover:scale-105 active:translate-y-1 transition-all">
                 <LogOut size={24} strokeWidth={2.5} className="text-yellow-400" />
              </button>
         </div>
 
         <StickerMenu 
+            isOpen={isStickerMenuOpen}
+            onClose={() => setIsStickerMenuOpen(false)}
             stickerLibrary={[...AVAILABLE_STICKERS, ...customLibrary]} 
             onAddStickerToCanvas={(src) => {
                 const newS = { id: `s-${Date.now()}`, type: 'image' as const, src, x: window.innerWidth/2 - 50, y: window.scrollY + 300, rotation: (Math.random()*20)-10, scale: 1 };
@@ -309,6 +314,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             onDeleteStickerFromLibrary={handleDeleteLibraryItem}
         />
         
+        <ShareModal isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} roomId={room.roomId} pin={room.pin} />
+
         <TrashBin isVisible={interaction.mode === 'DRAG' && interaction.targetId !== 'bucket-list'} isHovered={isOverTrash} />
         <TodoModal isOpen={isTodoModalOpen} onClose={()=>setIsTodoModalOpen(false)} items={todoItems} setItems={updateTodoItems} />
 
@@ -352,13 +359,14 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 onClick={()=>setIsTodoModalOpen(true)}
             >
                 <div className="flex flex-col h-full">
-                    <span className="font-bold text-2xl mb-2 text-rose-500 border-b-2 border-rose-100/50 pb-1">Bucket List</span>
+                    <span className="font-bold text-2xl mb-4 text-rose-500 border-b-2 border-rose-100/50 pb-1">Bucket List</span>
                     {todoItems.length === 0 ? (
                         <p className="text-slate-400 text-lg italic mt-4 text-center">Tap edit to add dreams...</p>
                     ) : (
-                        <ul className="space-y-1 overflow-hidden">
-                            {todoItems.slice(0,5).map((i,k)=><li key={k} className="truncate">• {i}</li>)}
-                            {todoItems.length > 5 && <li className="text-sm opacity-50 mt-1">...and {todoItems.length - 5} more</li>}
+                        <ul className="space-y-1">
+                            {todoItems.map((item,k) => (
+                                <li key={k} className="break-words leading-tight">• {item}</li>
+                            ))}
                         </ul>
                     )}
                 </div>

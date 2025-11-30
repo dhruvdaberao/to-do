@@ -54,7 +54,7 @@ const StickyNote: React.FC<StickyNoteProps> = ({
         onMouseDown={handleDrag}
         onTouchStart={handleDrag}
     >
-      <div className="relative w-[400px] h-[300px] bg-[#fef9c3] shadow-[2px_4px_12px_rgba(0,0,0,0.1)] rounded-sm overflow-hidden transition-shadow hover:shadow-xl">
+      <div className="relative w-[400px] min-h-[300px] h-auto bg-[#fef9c3] shadow-[2px_4px_12px_rgba(0,0,0,0.1)] rounded-sm overflow-hidden transition-shadow hover:shadow-xl pb-20">
         
         {/* Punched Holes */}
         <div className="absolute top-4 left-6 right-6 flex justify-between pointer-events-none z-10">
@@ -64,21 +64,21 @@ const StickyNote: React.FC<StickyNoteProps> = ({
         </div>
 
         {/* Content */}
-        <div className="relative pt-16 px-10 pb-12 h-full flex flex-col font-hand text-slate-800 text-xl leading-[36px]">
+        <div className="relative pt-16 px-10 pb-4 h-full flex flex-col font-hand text-slate-800 text-2xl font-bold leading-[36px]">
              {children}
         </div>
 
-        {/* Edit Button */}
+        {/* Quirky Pop Edit Button */}
         <button
-            onMouseDown={(e) => e.stopPropagation()} // Prevent drag
+            onMouseDown={(e) => e.stopPropagation()} 
             onClick={(e) => { e.stopPropagation(); onClick(); }}
             className={`
-                absolute bottom-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-900 hover:bg-black/5 transition-all
-                ${isHovered ? 'opacity-100' : 'opacity-0'}
+                absolute bottom-4 right-4 bg-yellow-400 text-slate-900 border-2 border-slate-900 rounded-xl p-3 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] active:translate-y-0 active:shadow-none transition-all z-20
+                ${isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}
             `}
             title="Edit List"
         >
-            <Edit3 size={24} />
+            <Edit3 size={24} strokeWidth={2.5} />
         </button>
 
         {/* Handles */}
