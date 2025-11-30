@@ -2,11 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#fbbf24" />
     <title>Countdown</title>
-      <link rel="icon" type="image/png" href="clock.png">
-
+    <!-- Used a CDN link for the icon so it shows up immediately -->
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/10691/10691802.png">
+    
     <link rel="manifest" href="/manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,15 +30,7 @@
         }
       }
     </script>
-    <style>
-      /* Custom Grid Background */
-      .bg-grid-pattern {
-        background-color: #fdfbf7;
-        background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px);
-        background-size: 24px 24px;
-      }
-    </style>
-  <script type="importmap">
+    <script type="importmap">
 {
   "imports": {
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
@@ -51,5 +44,7 @@
 </head>
   <body class="bg-grid-pattern text-slate-800 antialiased min-h-screen">
     <div id="root"></div>
+    <!-- THIS SCRIPT WAS MISSING. IT IS REQUIRED TO RUN THE APP. -->
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>
