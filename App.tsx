@@ -17,10 +17,13 @@ const TARGET_MONTH = 6; // July (0-indexed)
 const TARGET_DAY = 6;
 
 // Determine API URL based on environment
-// If localhost, look for local server. If production (Vercel), use relative path to serverless function.
-const API_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+// 1. Check if VITE_API_URL is set in environment variables (Best for Vercel with separate backend)
+// 2. Fallback to localhost if running locally
+// 3. Fallback to relative path if hosted in the same repo
+const API_URL = (import.meta as any).env?.VITE_API_URL || 
+  (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
     ? "http://localhost:5000/api/data" 
-    : "/api/data";
+    : "/api/data");
 
 // No default stickers on the canvas initially
 const DEFAULT_STICKERS: StickerData[] = [];
@@ -412,7 +415,7 @@ const App: React.FC = () => {
         setItems={setTodoItems}
       />
 
-      <div className="flex flex-col items-center gap-6 z-10 mt-24 sm:mt-8 mb-10 w-full max-w-4xl">
+      <div className="flex flex-col items-center gap-6 z-10 mt-20 sm:mt-8 mb-10 w-full max-w-4xl">
         <div className="text-center">
              <h1 className="text-5xl sm:text-7xl font-marker text-slate-800 mb-6 drop-shadow-sm leading-tight">
                 Counting down to Us
