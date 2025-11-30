@@ -1,23 +1,29 @@
-// api/data.js
 const mongoose = require('mongoose');
 
-// Cached connection for Vercel hot reloads
+// --- 1. CONFIGURATION ---
+// We cache the connection so we don't reconnect on every request
 let isConnected = false;
 
 const connectToDatabase = async () => {
-  if (isConnected) return;
-  
-  if (!process.env.MONGO_URI) {
-    throw new Error('MONGO_URI is not defined in environment variables');
+  if (isConnected) {
+    console.log('=> Using existing database connection');
+    return;
   }
 
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI environment variable is missing in Vercel!');
+  }
+
+  console.log('=> Using new database connection');
+  // Connect to MongoDB
   await mongoose.connect(process.env.MONGO_URI);
   isConnected = true;
 };
 
-// Define Schema
+// --- 2. DATABASE SCHEMA ---
+// This defines what our data looks like in MongoDB
 const AppDataSchema = new mongoose.Schema({
-  id: { type: String, default: 'main_room' },
+  id: { type: String, default: 'main_room' }, // We use one ID to sync everyone to the same room
   stickers: Array,
   todoItems: Array,
   noteState: Object,
@@ -26,7 +32,7 @@ const AppDataSchema = new mongoose.Schema({
   photo: String
 });
 
-// Prevent model recompilation error in serverless
+// Prevent model recompilation error in serverless environment
 let AppData;
 try {
   AppData = mongoose.model('AppData');
@@ -34,8 +40,10 @@ try {
   AppData = mongoose.model('AppData', AppDataSchema);
 }
 
+// --- 3. THE SERVERLESS HANDLER ---
+// This function runs every time the frontend requests data
 module.exports = async (req, res) => {
-  // 1. Handle CORS (So your frontend can talk to it)
+  // Setup CORS to allow your frontend to talk to this backend
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -44,42 +52,36 @@ module.exports = async (req, res) => {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Handle preflight request
+  // Handle the "Preflight" check from the browser
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   try {
+    // Connect to DB
     await connectToDatabase();
 
-    // GET: Fetch Data
+    // GET Request: Frontend asking for latest data
     if (req.method === 'GET') {
       let data = await AppData.findOne({ id: 'main_room' });
+      // If no data exists yet, create the initial empty record
       if (!data) {
-        data = await AppData.create({ id: 'main_room', stickers: [], todoItems: [] });
+        data = await AppData.create({ id: 'main_room' });
       }
       return res.status(200).json(data);
     }
 
-    // POST: Save Data
+    // POST Request: Frontend sending new data to save
     if (req.method === 'POST') {
-      const { stickers, todoItems, noteState, redBubble, greenBubble, photo } = req.body;
-      
-      await AppData.findOneAndUpdate(
-        { id: 'main_room' },
-        { stickers, todoItems, noteState, redBubble, greenBubble, photo },
-        { upsert: true, new: true }
-      );
-      
+      const payload = req.body;
+      // Update the data in MongoDB
+      await AppData.findOneAndUpdate({ id: 'main_room' }, payload, { upsert: true });
       return res.status(200).json({ success: true });
     }
 
-    // Invalid Method
-    return res.status(405).json({ error: 'Method not allowed' });
-
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error("Database Error:", error);
+    return res.status(500).json({ error: error.message });
   }
 };

@@ -16,14 +16,10 @@ import { AVAILABLE_STICKERS, StickerDefinition } from './components/Doodles';
 const TARGET_MONTH = 6; // July (0-indexed)
 const TARGET_DAY = 6;
 
-// Determine API URL based on environment
-// 1. Check if VITE_API_URL is set in environment variables (Best for Vercel with separate backend)
-// 2. Fallback to localhost if running locally
-// 3. Fallback to relative path if hosted in the same repo
-const API_URL = (import.meta as any).env?.VITE_API_URL || 
-  (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-    ? "http://localhost:5000/api/data" 
-    : "/api/data");
+// API URL CONFIGURATION
+// For Single Repo Deployment (Option 1): We want "/api/data" (relative path)
+// For Separate Repo Deployment (Option 2): We check VITE_API_URL
+const API_URL = (import.meta as any).env?.VITE_API_URL || "/api/data";
 
 // No default stickers on the canvas initially
 const DEFAULT_STICKERS: StickerData[] = [];
@@ -83,18 +79,23 @@ const App: React.FC = () => {
       try {
           const res = await fetch(API_URL);
           if (res.ok) {
-              const data = await res.json();
-              // Only update if data exists
-              if (data) {
-                  isSyncingRef.current = true;
-                  if (data.stickers) setStickers(data.stickers);
-                  if (data.todoItems) setTodoItems(data.todoItems);
-                  if (data.noteState) setNoteState(data.noteState);
-                  if (data.redBubble) setRedBubbleText(data.redBubble);
-                  if (data.greenBubble) setGreenBubbleText(data.greenBubble);
-                  if (data.photo) setPhotoData(data.photo);
-                  // Allow updates again after a tick
-                  setTimeout(() => { isSyncingRef.current = false; }, 100);
+              // Try catch for JSON parsing in case endpoint returns HTML error page (common in dev)
+              try {
+                const data = await res.json();
+                // Only update if data exists
+                if (data) {
+                    isSyncingRef.current = true;
+                    if (data.stickers) setStickers(data.stickers);
+                    if (data.todoItems) setTodoItems(data.todoItems);
+                    if (data.noteState) setNoteState(data.noteState);
+                    if (data.redBubble) setRedBubbleText(data.redBubble);
+                    if (data.greenBubble) setGreenBubbleText(data.greenBubble);
+                    if (data.photo) setPhotoData(data.photo);
+                    // Allow updates again after a tick
+                    setTimeout(() => { isSyncingRef.current = false; }, 100);
+                }
+              } catch (jsonError) {
+                // Silently ignore JSON parse errors (backend might not be ready)
               }
           }
       } catch (e) {
