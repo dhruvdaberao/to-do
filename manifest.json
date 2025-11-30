@@ -1,6 +1,6 @@
 {
-  "name": "July 6th Countdown",
-  "short_name": "July 6th",
+  "name": "Countdown",
+  "short_name": "CountDown",
   "description": "Our quirky aesthetic countdown.",
   "start_url": "/",
   "display": "standalone",
