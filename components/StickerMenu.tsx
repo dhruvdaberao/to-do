@@ -74,7 +74,7 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
               console.error(err); 
           }
       }
-      // Note: We deliberately do NOT close the menu here so user can add more
+      // Do NOT close menu so user can see uploads
     }
   };
 
@@ -99,7 +99,10 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
                         {stickerLibrary.map((sticker) => (
                             <div key={sticker.id} className="relative group aspect-square">
                                 <button 
-                                    onClick={() => onAddStickerToCanvas(sticker.src)}
+                                    onClick={() => {
+                                        onAddStickerToCanvas(sticker.src);
+                                        onClose(); // Auto-Close on Selection
+                                    }}
                                     className="w-full h-full bg-white border-2 border-slate-200 rounded-lg hover:border-slate-800 hover:bg-yellow-50 transition-all p-2 flex items-center justify-center shadow-sm active:scale-95"
                                 >
                                     <img src={sticker.src} alt="sticker" className="w-full h-full object-contain pointer-events-none" />
