@@ -35,7 +35,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   // --- STATE ---
   const [targetISO, setTargetISO] = useState(room.targetISO || new Date().toISOString());
   const [eventName, setEventName] = useState(room.eventName || 'Us');
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>({ days: 0, hours: 0, minutes: 0, seconds: 0, isAnniversary: false });
+  
+  // Initialize immediately to prevent loading flash
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(room.targetISO || new Date().toISOString()));
   
   // Synced Data
   const [stickers, setStickers] = useState<StickerData[]>(room.stickers || []);
@@ -157,7 +159,10 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         }
     };
     
+    // Run immediately
     tick();
+    syncRoom(); // Initial fetch to ensure up-to-date data immediately
+
     const timer = setInterval(tick, 1000);
     const poller = setInterval(syncRoom, 1000); 
     return () => { clearInterval(timer); clearInterval(poller); };
@@ -393,19 +398,30 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         )}
 
         {/* --- HERO SECTION --- */}
-        <div className="flex flex-col items-center gap-6 z-10 mt-24 sm:mt-16 mb-10 w-full max-w-4xl">
-             <div className="relative transform -rotate-2 mb-2 group cursor-pointer" onClick={handleOpenEdit}>
-                 <div className="bg-sky-200 border-4 border-slate-900 px-4 py-1 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] rounded-lg flex items-center gap-2 hover:bg-sky-300 transition-colors">
-                    <span className="font-hand font-bold text-slate-900 text-sm uppercase tracking-wider">
-                       Target: {formatDateDisplay(targetISO)}
-                    </span>
-                    <Edit3 size={14} className="opacity-50 group-hover:opacity-100" />
-                 </div>
-             </div>
+        <div className="flex flex-col items-center justify-center z-10 mt-20 sm:mt-12 mb-10 w-full max-w-4xl px-2">
+            
+            {/* Split Title and Event Name for better editing UX */}
+            <div className="flex flex-col items-center justify-center text-center mb-6">
+                <span className="text-3xl sm:text-4xl font-marker text-slate-500 mb-2">Counting down to</span>
+                
+                <button 
+                    onClick={handleOpenEdit}
+                    className="group flex items-center justify-center gap-3 bg-white/60 backdrop-blur-md px-6 py-2 rounded-2xl border-b-4 border-slate-900/10 hover:border-slate-900 hover:bg-yellow-100 transition-all active:scale-95 max-w-full"
+                    title="Click to edit event name and date"
+                >
+                    <h1 className="text-4xl sm:text-6xl font-marker text-slate-900 leading-tight drop-shadow-sm truncate">
+                        {eventName}
+                    </h1>
+                    <div className="bg-slate-900 text-yellow-400 p-2 rounded-full opacity-60 group-hover:opacity-100 transition-opacity shadow-sm shrink-0">
+                         <Edit3 size={16} strokeWidth={3} />
+                    </div>
+                </button>
+                
+                <div className="mt-2 text-sm font-hand font-bold text-slate-400">
+                    {formatDateDisplay(targetISO)}
+                </div>
+            </div>
 
-            <h1 className="text-5xl sm:text-7xl font-marker text-slate-800 mb-2 leading-tight text-center drop-shadow-sm px-4">
-                Counting down to {eventName}
-            </h1>
             <CountdownTimer timeLeft={timeLeft} />
         </div>
 
