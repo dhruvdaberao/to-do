@@ -70,8 +70,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
   // Refs
   const isInteractingRef = useRef(false);
-  const isSyncingRef = useRef(false);
-  const syncPauseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timestamp of last LOCAL modification. We use this to ignore stale server updates.
+  const lastLocalUpdateRef = useRef<number>(0);
   const lastChatLenRef = useRef(room.chatMessages?.length || 0);
 
   // --- NOTIFICATIONS & PERMISSIONS ---
@@ -91,8 +91,12 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
   // --- SYNC ENGINE ---
   const syncRoom = async () => {
-    // CRITICAL: Do not sync if user is interacting or if sync is paused
-    if (isInteractingRef.current || isSyncingRef.current) return;
+    // CRITICAL: Do not sync if user is interacting
+    if (isInteractingRef.current) return;
+    
+    // CRITICAL: Do not sync if we just updated something locally (within last 3 seconds)
+    // This allows the server write to complete before we pull read.
+    if (Date.now() - lastLocalUpdateRef.current < 3000) return;
 
     try {
         const res = await fetch(apiUrl, {
@@ -102,8 +106,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         });
         const data = await res.json();
         if (data.roomId) {
-            // Check interaction lock AGAIN before applying state
-            if (!isInteractingRef.current) {
+            // Check interaction locks AGAIN before applying state
+            if (!isInteractingRef.current && (Date.now() - lastLocalUpdateRef.current > 3000)) {
                 setStickers(data.stickers || []);
                 setTodoItems(data.todoItems || []);
                 setNoteState(data.noteState || { x: 0, y: 0, rotation: -2, scale: 1 });
@@ -129,10 +133,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   };
 
   const pushUpdates = useCallback(async (updates: any) => {
-    // Pause syncing briefly to prevent race conditions where old server data overwrites new local data
-    isSyncingRef.current = true;
-    if (syncPauseTimeout.current) clearTimeout(syncPauseTimeout.current);
-    syncPauseTimeout.current = setTimeout(() => { isSyncingRef.current = false; }, 2000);
+    // Record that we made a local update
+    lastLocalUpdateRef.current = Date.now();
 
     try {
         await fetch(apiUrl, {
@@ -154,19 +156,14 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         if (left.days === 1 && left.hours === 0 && left.minutes === 0 && left.seconds === 0) {
             triggerNotification("1 Day Left!", "Get ready for the big moment!");
         }
-        if (left.days === 0 && left.hours === 0 && left.minutes === 1 && left.seconds === 0) {
-            triggerNotification("1 Minute Left!", "Almost there!");
-        }
     };
     
-    // Run immediately
-    tick();
-    syncRoom(); // Initial fetch to ensure up-to-date data immediately
+    tick(); // Run immediately
 
     const timer = setInterval(tick, 1000);
-    const poller = setInterval(syncRoom, 1000); 
+    const poller = setInterval(syncRoom, 1500); // Poll every 1.5s
     return () => { clearInterval(timer); clearInterval(poller); };
-  }, [targetISO]); // Re-run if target changes
+  }, [targetISO]);
 
   useEffect(() => {
     if (isChatOpen) setHasUnreadMsg(false);
@@ -175,7 +172,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const updateTodoItems = (items: string[]) => {
       setTodoItems(items);
       pushUpdates({ todoItems: items });
-      triggerNotification("Bucket List Updated", `${currentUser} updated the list!`);
   };
   
   const updatePhoto = (data: string) => {
@@ -188,6 +184,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     setStickers([]);
     setTodoItems([]);
     setPhotoData('us.png');
+    lastLocalUpdateRef.current = Date.now();
     await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -224,10 +221,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       setTargetISO(newISO);
       setEventName(editName);
       
-      // Update local state immediately
       setIsEditCountdownOpen(false);
+      lastLocalUpdateRef.current = Date.now();
       
-      // Push to backend
       await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -250,7 +246,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       else target = stickers.find(s => s.id === id);
 
       if (!target) return;
-      isInteractingRef.current = true; // LOCK SYNC
+      isInteractingRef.current = true; 
+      lastLocalUpdateRef.current = Date.now(); // Prevent sync stealing focus
+
       setInteraction({
           mode, targetId: id, startMouse: { x: clientX, y: clientY }, initialData: { ...target }
       });
@@ -298,7 +296,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
           else pushUpdates({ stickers });
       }
       
-      isInteractingRef.current = false; // UNLOCK SYNC
+      isInteractingRef.current = false;
+      lastLocalUpdateRef.current = Date.now(); // Ensure we don't sync immediately
       setInteraction(prev => ({ ...prev, mode: 'IDLE', targetId: null }));
       setIsOverTrash(false);
   }, [interaction, isOverTrash, stickers, noteState, pushUpdates]);
@@ -350,11 +349,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             stickerLibrary={[...AVAILABLE_STICKERS, ...customLibrary]} 
             onAddStickerToCanvas={(src) => {
                 const newS = { id: `s-${Date.now()}`, type: 'image' as const, src, x: window.innerWidth/2 - 50, y: window.scrollY + 300, rotation: (Math.random()*20)-10, scale: 1 };
-                // Update local state immediately
                 setStickers(prev => [...prev, newS]);
-                // Push update with short delay/pause logic implicitly handled by pushUpdates
                 pushUpdates({ stickers: [...stickers, newS] });
-                setIsStickerMenuOpen(false); // Auto-Close
+                setIsStickerMenuOpen(false); 
             }}
             onUploadStickerToLibrary={(src) => {
                 const newLib = [...customLibrary, {id:`c-${Date.now()}`, src, label:'Custom'}];
@@ -368,7 +365,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         <TrashBin isVisible={interaction.mode === 'DRAG' && interaction.targetId !== 'bucket-list'} isHovered={isOverTrash} />
         <TodoModal isOpen={isTodoModalOpen} onClose={()=>setIsTodoModalOpen(false)} items={todoItems} setItems={updateTodoItems} />
 
-        {/* --- EDIT MODAL --- */}
         {isEditCountdownOpen && (
             <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-sm rounded-xl border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] overflow-hidden transform rotate-1 p-6">
@@ -397,32 +393,37 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             </div>
         )}
 
-        {/* --- HERO SECTION --- */}
+        {/* --- HERO SECTION WITH BLUE PILL HEADER --- */}
         <div className="flex flex-col items-center justify-center z-10 mt-20 sm:mt-12 mb-10 w-full max-w-4xl px-2">
             
-            {/* Split Title and Event Name for better editing UX */}
-            <div className="flex flex-col items-center justify-center text-center mb-6">
-                <span className="text-3xl sm:text-4xl font-marker text-slate-500 mb-2">Counting down to</span>
-                
-                <button 
-                    onClick={handleOpenEdit}
-                    className="group flex items-center justify-center gap-3 bg-white/60 backdrop-blur-md px-6 py-2 rounded-2xl border-b-4 border-slate-900/10 hover:border-slate-900 hover:bg-yellow-100 transition-all active:scale-95 max-w-full"
-                    title="Click to edit event name and date"
-                >
-                    <h1 className="text-4xl sm:text-6xl font-marker text-slate-900 leading-tight drop-shadow-sm truncate">
-                        {eventName}
-                    </h1>
-                    <div className="bg-slate-900 text-yellow-400 p-2 rounded-full opacity-60 group-hover:opacity-100 transition-opacity shadow-sm shrink-0">
-                         <Edit3 size={16} strokeWidth={3} />
-                    </div>
-                </button>
-                
-                <div className="mt-2 text-sm font-hand font-bold text-slate-400">
+            {/* 1. Target Blue Bar */}
+            <div className="inline-flex items-center justify-center bg-slate-900 text-sky-200 px-6 py-2 rounded-xl border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(203,213,225,1)] mb-4 transform -rotate-1">
+                 <span className="font-bold font-sans text-xs sm:text-sm tracking-widest uppercase mr-2 text-yellow-400">Target:</span>
+                 <span className="font-hand font-bold text-lg sm:text-xl uppercase tracking-wide">
                     {formatDateDisplay(targetISO)}
-                </div>
+                 </span>
             </div>
 
-            <CountdownTimer timeLeft={timeLeft} />
+            {/* 2. Counting down to... */}
+            <span className="text-3xl sm:text-4xl font-marker text-slate-500 mb-2">Counting down to</span>
+            
+            {/* 3. Event Name (Editable) */}
+            <button 
+                onClick={handleOpenEdit}
+                className="group flex items-center justify-center gap-2 sm:gap-4 max-w-full px-4"
+                title="Click to edit"
+            >
+                <h1 className="text-4xl sm:text-6xl md:text-7xl font-marker text-slate-900 leading-tight drop-shadow-sm text-center break-words line-clamp-2">
+                    {eventName}
+                </h1>
+                <div className="bg-yellow-400 text-slate-900 p-2 rounded-full border-2 border-slate-900 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm shrink-0 scale-75 sm:scale-100">
+                        <Edit3 size={16} strokeWidth={3} />
+                </div>
+            </button>
+            
+            <div className="mt-8 w-full">
+                <CountdownTimer timeLeft={timeLeft} />
+            </div>
         </div>
 
         <TapedPhoto imageSrc={photoData} onImageUpload={updatePhoto} />

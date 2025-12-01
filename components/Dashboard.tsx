@@ -25,10 +25,18 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   const [userRooms, setUserRooms] = useState<any[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
 
-  // Fetch user's rooms on mount
+  // Fetch user's rooms on mount with CACHING STRATEGY
   useEffect(() => {
       const fetchUserRooms = async () => {
-          setRoomsLoading(true);
+          // 1. Load from cache immediately for instant UI
+          const cachedRooms = localStorage.getItem(`rooms_${username}`);
+          if (cachedRooms) {
+              setUserRooms(JSON.parse(cachedRooms));
+          } else {
+              setRoomsLoading(true);
+          }
+
+          // 2. Fetch fresh data in background
           try {
               const res = await fetch(apiUrl, {
                   method: 'POST',
@@ -38,10 +46,16 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
               const data = await res.json();
               if (data.success) {
                   setUserRooms(data.rooms);
+                  // Update cache
+                  localStorage.setItem(`rooms_${username}`, JSON.stringify(data.rooms));
               }
-          } catch (e) { console.error("Failed to fetch rooms"); }
-          finally { setRoomsLoading(false); }
+          } catch (e) { 
+              console.error("Failed to fetch rooms"); 
+          } finally { 
+              setRoomsLoading(false); 
+          }
       };
+
       if (mode === 'MENU') {
           fetchUserRooms();
       }
@@ -96,6 +110,14 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
 
   const handleDirectJoin = (roomId: string) => {
       setLoading(true);
+      // Optimistic check: see if we have the room in our userRooms list
+      const cachedRoom = userRooms.find(r => r.roomId === roomId);
+      if (cachedRoom) {
+          // Pass cached data first for speed, but still fetch to ensure validity
+          onJoinRoom(cachedRoom);
+          return; 
+      }
+
       fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -151,9 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                 <div className="mt-4 border-t-4 border-slate-100 pt-4">
                     <h3 className="font-marker text-xl text-slate-400 mb-3 text-center">Your Countdowns</h3>
                     
-                    {roomsLoading ? (
-                        <div className="flex justify-center p-4"><Loader className="animate-spin text-slate-300" /></div>
-                    ) : userRooms.length > 0 ? (
+                    {userRooms.length > 0 ? (
                         <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
                             {userRooms.map((room) => (
                                 <button 
@@ -166,8 +186,8 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                                             <Calendar size={18} className="text-slate-500" />
                                         </div>
                                         <div className="text-left">
-                                            <span className="font-hand font-bold text-lg text-slate-800 block">{room.eventName || 'Countdown'}</span>
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{room.roomId}</span>
+                                            <span className="font-hand font-bold text-lg text-slate-800 block truncate max-w-[150px] text-left">{room.eventName || 'Countdown'}</span>
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block text-left">{room.roomId}</span>
                                         </div>
                                     </div>
                                     <ArrowRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors" />
@@ -176,7 +196,9 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                         </div>
                     ) : (
                         <div className="text-center p-4 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50">
-                            <p className="font-hand text-slate-400 font-bold">No countdowns found yet.</p>
+                            <p className="font-hand text-slate-400 font-bold">
+                                {roomsLoading ? 'Loading rooms...' : 'No countdowns found yet.'}
+                            </p>
                         </div>
                     )}
                 </div>
