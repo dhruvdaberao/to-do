@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, LogIn, LogOut, ArrowRight, Calendar, Loader } from 'lucide-react';
+import { Plus, LogIn, LogOut, ArrowRight, Calendar } from 'lucide-react';
 
 interface DashboardProps {
   username: string;
@@ -22,21 +22,22 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const [userRooms, setUserRooms] = useState<any[]>([]);
+  // Initialize from cache immediately for zero-lag render
+  const [userRooms, setUserRooms] = useState<any[]>(() => {
+      try {
+        const cached = localStorage.getItem(`rooms_${username}`);
+        return cached ? JSON.parse(cached) : [];
+      } catch { return []; }
+  });
+  
   const [roomsLoading, setRoomsLoading] = useState(false);
 
-  // Fetch user's rooms on mount with CACHING STRATEGY
+  // Background fetch to update cache silently
   useEffect(() => {
       const fetchUserRooms = async () => {
-          // 1. Load from cache immediately for instant UI
-          const cachedRooms = localStorage.getItem(`rooms_${username}`);
-          if (cachedRooms) {
-              setUserRooms(JSON.parse(cachedRooms));
-          } else {
-              setRoomsLoading(true);
-          }
+          // Only show loading if we have absolutely no data
+          if (userRooms.length === 0) setRoomsLoading(true);
 
-          // 2. Fetch fresh data in background
           try {
               const res = await fetch(apiUrl, {
                   method: 'POST',
@@ -46,7 +47,6 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
               const data = await res.json();
               if (data.success) {
                   setUserRooms(data.rooms);
-                  // Update cache
                   localStorage.setItem(`rooms_${username}`, JSON.stringify(data.rooms));
               }
           } catch (e) { 
@@ -78,6 +78,11 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
         
         const data = await res.json();
         if (data.success) {
+            // Update cache immediately upon creation/join
+            const newRooms = [data.room, ...userRooms.filter(r => r.roomId !== data.room.roomId)];
+            setUserRooms(newRooms);
+            localStorage.setItem(`rooms_${username}`, JSON.stringify(newRooms));
+            
             onJoinRoom(data.room);
         } else {
             setError(data.error);
@@ -109,15 +114,15 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   };
 
   const handleDirectJoin = (roomId: string) => {
-      setLoading(true);
-      // Optimistic check: see if we have the room in our userRooms list
+      // INSTANT JOIN: Use cached data if available
       const cachedRoom = userRooms.find(r => r.roomId === roomId);
       if (cachedRoom) {
-          // Pass cached data first for speed, but still fetch to ensure validity
           onJoinRoom(cachedRoom);
           return; 
       }
 
+      // Fallback if not in list
+      setLoading(true);
       fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -138,7 +143,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
   return (
     <div className="min-h-screen bg-grid-pattern flex flex-col items-center justify-center p-4">
       
-      <div className="mb-8 text-center">
+      <div className="mb-8 text-center animate-fade-in">
         <h1 className="font-marker text-5xl text-slate-900 mb-2">Hello, {username}!</h1>
         <p className="font-hand text-xl text-slate-500 font-bold">Ready to make some memories?</p>
       </div>
@@ -169,7 +174,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                     <LogIn size={32} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
                 </button>
 
-                {/* --- YOUR COUNTDOWNS SECTION (ALWAYS VISIBLE) --- */}
+                {/* --- YOUR COUNTDOWNS SECTION --- */}
                 <div className="mt-4 border-t-4 border-slate-100 pt-4">
                     <h3 className="font-marker text-xl text-slate-400 mb-3 text-center">Your Countdowns</h3>
                     
@@ -181,23 +186,23 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
                                     onClick={() => handleDirectJoin(room.roomId)}
                                     className="w-full bg-slate-50 border-2 border-slate-200 hover:border-slate-900 p-3 rounded-lg flex items-center justify-between group transition-colors"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-white p-2 rounded-md border border-slate-200 shadow-sm">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="bg-white p-2 rounded-md border border-slate-200 shadow-sm shrink-0">
                                             <Calendar size={18} className="text-slate-500" />
                                         </div>
-                                        <div className="text-left">
-                                            <span className="font-hand font-bold text-lg text-slate-800 block truncate max-w-[150px] text-left">{room.eventName || 'Countdown'}</span>
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block text-left">{room.roomId}</span>
+                                        <div className="text-left min-w-0">
+                                            <span className="font-hand font-bold text-lg text-slate-800 block truncate">{room.eventName || 'Countdown'}</span>
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">{room.roomId}</span>
                                         </div>
                                     </div>
-                                    <ArrowRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors" />
+                                    <ArrowRight size={18} className="text-slate-300 group-hover:text-slate-900 transition-colors shrink-0" />
                                 </button>
                             ))}
                         </div>
                     ) : (
                         <div className="text-center p-4 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50">
                             <p className="font-hand text-slate-400 font-bold">
-                                {roomsLoading ? 'Loading rooms...' : 'No countdowns found yet.'}
+                                {roomsLoading ? 'Loading rooms...' : 'No countdowns found.'}
                             </p>
                         </div>
                     )}
@@ -213,7 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
         )}
 
         {mode === 'CREATE' && (
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+            <form onSubmit={handleCreate} className="flex flex-col gap-4 animate-fade-in">
                 <h3 className="font-marker text-2xl text-center mb-2">Create New Room</h3>
                 {error && <p className="bg-rose-100 text-rose-600 p-2 rounded-lg text-center font-bold text-sm border border-rose-200">{error}</p>}
                 
@@ -248,7 +253,7 @@ const Dashboard: React.FC<DashboardProps> = ({ username, onJoinRoom, apiUrl }) =
         )}
 
         {mode === 'JOIN' && (
-            <form onSubmit={handleJoin} className="flex flex-col gap-4">
+            <form onSubmit={handleJoin} className="flex flex-col gap-4 animate-fade-in">
                 <h3 className="font-marker text-2xl text-center mb-2">Join Room</h3>
                 {error && <p className="bg-rose-100 text-rose-600 p-2 rounded-lg text-center font-bold text-sm border border-rose-200">{error}</p>}
                 

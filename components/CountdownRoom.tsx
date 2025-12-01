@@ -70,16 +70,20 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
   // Refs
   const isInteractingRef = useRef(false);
-  // Timestamp of last LOCAL modification. We use this to ignore stale server updates.
   const lastLocalUpdateRef = useRef<number>(0);
   const lastChatLenRef = useRef(room.chatMessages?.length || 0);
 
-  // --- NOTIFICATIONS & PERMISSIONS ---
+  // Refs to access current state inside intervals without dependencies
+  const isTodoModalOpenRef = useRef(isTodoModalOpen);
+  const isEditCountdownOpenRef = useRef(isEditCountdownOpen);
+
+  useEffect(() => { isTodoModalOpenRef.current = isTodoModalOpen; }, [isTodoModalOpen]);
+  useEffect(() => { isEditCountdownOpenRef.current = isEditCountdownOpen; }, [isEditCountdownOpen]);
+
+  // --- NOTIFICATIONS ---
   useEffect(() => {
-    if ("Notification" in window) {
-      if (Notification.permission !== "granted") {
-        Notification.requestPermission();
-      }
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission();
     }
   }, []);
 
@@ -94,9 +98,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     // CRITICAL: Do not sync if user is interacting
     if (isInteractingRef.current) return;
     
-    // CRITICAL: Do not sync if we just updated something locally (within last 3 seconds)
-    // This allows the server write to complete before we pull read.
-    if (Date.now() - lastLocalUpdateRef.current < 3000) return;
+    // CRITICAL: Prevent server overwrite if local changes were made recently (5s buffer)
+    if (Date.now() - lastLocalUpdateRef.current < 5000) return;
 
     try {
         const res = await fetch(apiUrl, {
@@ -106,16 +109,25 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         });
         const data = await res.json();
         if (data.roomId) {
-            // Check interaction locks AGAIN before applying state
-            if (!isInteractingRef.current && (Date.now() - lastLocalUpdateRef.current > 3000)) {
+            // Safety check again before applying
+            if (!isInteractingRef.current && (Date.now() - lastLocalUpdateRef.current > 5000)) {
+                
                 setStickers(data.stickers || []);
-                setTodoItems(data.todoItems || []);
                 setNoteState(data.noteState || { x: 0, y: 0, rotation: -2, scale: 1 });
                 setPhotoData(data.photo || 'us.png');
                 setCustomLibrary(data.customLibrary || []);
                 setMembers(data.members || []);
-                setTargetISO(data.targetISO || room.targetISO);
-                setEventName(data.eventName || 'Us');
+                
+                // Guard: Don't update todo list while modal is open to prevent jumping
+                if (!isTodoModalOpenRef.current) {
+                    setTodoItems(data.todoItems || []);
+                }
+                
+                // Guard: Don't update event details while editing
+                if (!isEditCountdownOpenRef.current) {
+                    setTargetISO(data.targetISO || room.targetISO);
+                    setEventName(data.eventName || 'Us');
+                }
                 
                 const newMsgs = data.chatMessages || [];
                 if (newMsgs.length > lastChatLenRef.current) {
@@ -133,7 +145,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   };
 
   const pushUpdates = useCallback(async (updates: any) => {
-    // Record that we made a local update
+    // Record that we made a local update to pause sync
     lastLocalUpdateRef.current = Date.now();
 
     try {
@@ -161,7 +173,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     tick(); // Run immediately
 
     const timer = setInterval(tick, 1000);
-    const poller = setInterval(syncRoom, 1500); // Poll every 1.5s
+    const poller = setInterval(syncRoom, 2000); // Poll every 2s
     return () => { clearInterval(timer); clearInterval(poller); };
   }, [targetISO]);
 
@@ -286,7 +298,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const handleGlobalEnd = useCallback(() => {
       if (!isInteractingRef.current) return;
       
-      // Perform final save
       if (interaction.mode === 'DRAG' && isOverTrash && interaction.targetId && interaction.targetId !== 'bucket-list') {
           const newStickers = stickers.filter(s => s.id !== interaction.targetId);
           setStickers(newStickers);
@@ -297,7 +308,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       }
       
       isInteractingRef.current = false;
-      lastLocalUpdateRef.current = Date.now(); // Ensure we don't sync immediately
+      lastLocalUpdateRef.current = Date.now();
       setInteraction(prev => ({ ...prev, mode: 'IDLE', targetId: null }));
       setIsOverTrash(false);
   }, [interaction, isOverTrash, stickers, noteState, pushUpdates]);
@@ -393,27 +404,28 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             </div>
         )}
 
-        {/* --- HERO SECTION WITH BLUE PILL HEADER --- */}
+        {/* --- HERO SECTION WITH RESPONSIVE BLUE PILL HEADER --- */}
         <div className="flex flex-col items-center justify-center z-10 mt-20 sm:mt-12 mb-10 w-full max-w-4xl px-2">
             
             {/* 1. Target Blue Bar */}
-            <div className="inline-flex items-center justify-center bg-slate-900 text-sky-200 px-6 py-2 rounded-xl border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(203,213,225,1)] mb-4 transform -rotate-1">
-                 <span className="font-bold font-sans text-xs sm:text-sm tracking-widest uppercase mr-2 text-yellow-400">Target:</span>
-                 <span className="font-hand font-bold text-lg sm:text-xl uppercase tracking-wide">
+            <div className="inline-flex items-center justify-center bg-slate-900 text-sky-200 px-4 py-2 sm:px-6 sm:py-2 rounded-xl border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(203,213,225,1)] mb-4 transform -rotate-1 max-w-[95vw] sm:max-w-full">
+                 <span className="font-bold font-sans text-[10px] sm:text-xs tracking-widest uppercase mr-2 text-yellow-400 shrink-0">Target:</span>
+                 <span className="font-hand font-bold text-md sm:text-xl uppercase tracking-wide leading-tight break-words text-center">
                     {formatDateDisplay(targetISO)}
                  </span>
             </div>
 
             {/* 2. Counting down to... */}
-            <span className="text-3xl sm:text-4xl font-marker text-slate-500 mb-2">Counting down to</span>
+            <span className="text-2xl sm:text-3xl md:text-4xl font-marker text-slate-500 mb-2 text-center">Counting down to</span>
             
-            {/* 3. Event Name (Editable) */}
+            {/* 3. Event Name (Editable with better response) */}
             <button 
                 onClick={handleOpenEdit}
-                className="group flex items-center justify-center gap-2 sm:gap-4 max-w-full px-4"
+                className="group flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full px-2"
                 title="Click to edit"
             >
-                <h1 className="text-4xl sm:text-6xl md:text-7xl font-marker text-slate-900 leading-tight drop-shadow-sm text-center break-words line-clamp-2">
+                {/* Dynamically sizing text */}
+                <h1 className="text-[12vw] sm:text-7xl md:text-8xl font-marker text-slate-900 leading-none drop-shadow-sm text-center break-words max-w-full">
                     {eventName}
                 </h1>
                 <div className="bg-yellow-400 text-slate-900 p-2 rounded-full border-2 border-slate-900 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm shrink-0 scale-75 sm:scale-100">
@@ -421,7 +433,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 </div>
             </button>
             
-            <div className="mt-8 w-full">
+            <div className="mt-8 w-full px-1">
                 <CountdownTimer timeLeft={timeLeft} />
             </div>
         </div>
