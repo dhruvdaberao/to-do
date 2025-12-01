@@ -43,7 +43,7 @@ const UserSchema = new mongoose.Schema({
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   pin: { type: String, required: true },
-  eventName: { type: String, default: 'Us' }, // NEW: Dynamic Event Name
+  eventName: { type: String, default: 'Us' },
   targetISO: { type: String }, 
   targetDate: { type: Object }, // Legacy
   creatorId: String,
@@ -127,6 +127,7 @@ export default async function handler(req, res) {
 
     if (action === 'GET_USER_ROOMS') {
         const { username } = payload;
+        // Fetch all rooms where username is in the members array
         const rooms = await Room.find({ members: username });
         return res.status(200).json({ success: true, rooms });
     }
@@ -144,7 +145,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    // NEW: Update Room Details (Date, Time, Name)
     if (action === 'UPDATE_ROOM_DETAILS') {
         const { roomId, eventName, targetISO } = payload;
         await Room.findOneAndUpdate({ roomId }, { 
