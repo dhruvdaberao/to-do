@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, MessageCircle, Users, LogOut, Eraser, Share2, Sparkles, Edit3, X, Save } from 'lucide-react';
+import { Heart, MessageCircle, Users, LogOut, Eraser, Share2, Sparkles, Edit3, X, Save, Settings } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, formatDateDisplay } from '../utils/time';
 import CountdownTimer from './CountdownTimer';
 import TapedPhoto from './TapedPhoto';
@@ -35,6 +35,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   // --- STATE ---
   const [targetISO, setTargetISO] = useState(room.targetISO || new Date().toISOString());
   const [eventName, setEventName] = useState(room.eventName || 'Us');
+  const [quote, setQuote] = useState(room.quote || "Every second that ticks by is just one second closer to making more memories with you.");
   
   // Initialize immediately to prevent loading flash
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(room.targetISO || new Date().toISOString()));
@@ -76,9 +77,11 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   // Refs to access current state inside intervals without dependencies
   const isTodoModalOpenRef = useRef(isTodoModalOpen);
   const isEditCountdownOpenRef = useRef(isEditCountdownOpen);
+  const quoteRef = useRef(quote);
 
   useEffect(() => { isTodoModalOpenRef.current = isTodoModalOpen; }, [isTodoModalOpen]);
   useEffect(() => { isEditCountdownOpenRef.current = isEditCountdownOpen; }, [isEditCountdownOpen]);
+  useEffect(() => { quoteRef.current = quote; }, [quote]);
 
   // --- NOTIFICATIONS ---
   useEffect(() => {
@@ -129,6 +132,13 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                     setEventName(data.eventName || 'Us');
                 }
                 
+                // Guard: Don't update quote if user is typing (we assume if it's focused, but simple check is if it changed recently)
+                // For simplicity, we just sync it. React handles input focus well usually.
+                // But let's check against ref
+                if (data.quote && data.quote !== quoteRef.current) {
+                    setQuote(data.quote);
+                }
+                
                 const newMsgs = data.chatMessages || [];
                 if (newMsgs.length > lastChatLenRef.current) {
                     const lastMsg = newMsgs[newMsgs.length - 1];
@@ -160,13 +170,40 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     } catch (e) { console.error("Push Error", e); }
   }, [apiUrl, room.roomId]);
 
-  // Polling & Timer
+  // Polling, Timer & Auto-Reset Logic
   useEffect(() => {
     const tick = () => {
+        // 1. Calculate Time
         const left = calculateTimeLeft(targetISO);
         setTimeLeft(left);
+        
+        // 2. Notification for 1 Day left
         if (left.days === 1 && left.hours === 0 && left.minutes === 0 && left.seconds === 0) {
             triggerNotification("1 Day Left!", "Get ready for the big moment!");
+        }
+
+        // 3. Auto-Reset Logic (Check if we are > 24 hours past target)
+        const now = new Date();
+        const target = new Date(targetISO);
+        const diff = target.getTime() - now.getTime();
+        
+        // -86400000 ms is -24 hours. If diff is smaller (more negative), it's been more than a day.
+        if (diff < -86400000) {
+             console.log("Auto-resetting to next year...");
+             const newTarget = new Date(target);
+             newTarget.setFullYear(newTarget.getFullYear() + 1);
+             const newISO = newTarget.toISOString();
+             setTargetISO(newISO);
+             
+             // Push to server so everyone updates
+             fetch(apiUrl, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+                     action: 'UPDATE_ROOM_DETAILS',
+                     payload: { roomId: room.roomId, eventName, targetISO: newISO }
+                 })
+             });
         }
     };
     
@@ -175,7 +212,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     const timer = setInterval(tick, 1000);
     const poller = setInterval(syncRoom, 2000); // Poll every 2s
     return () => { clearInterval(timer); clearInterval(poller); };
-  }, [targetISO]);
+  }, [targetISO, eventName, apiUrl, room.roomId]); // Include eventName in dependency for auto-reset push
 
   useEffect(() => {
     if (isChatOpen) setHasUnreadMsg(false);
@@ -190,12 +227,17 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       setPhotoData(data);
       pushUpdates({ photo: data });
   };
+  
+  const handleQuoteBlur = () => {
+      pushUpdates({ quote });
+  };
 
   const handleClearPage = async () => {
     if(!window.confirm("Clear the whole page? This cannot be undone.")) return;
     setStickers([]);
     setTodoItems([]);
     setPhotoData('us.png');
+    setQuote("Every second that ticks by is just one second closer to making more memories with you.");
     lastLocalUpdateRef.current = Date.now();
     await fetch(apiUrl, {
         method: 'POST',
@@ -331,8 +373,20 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         
         {timeLeft.isAnniversary && <Confetti />}
 
-        {/* --- TOOLBAR --- */}
-        <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3 flex-wrap justify-end">
+        {/* --- PERMANENT EDIT BUTTON (Left Side) --- */}
+        <div className="fixed top-4 left-4 z-[90]">
+            <button 
+                onClick={handleOpenEdit}
+                className="group relative bg-yellow-300 text-slate-900 border-4 border-slate-900 rounded-lg p-3 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] hover:scale-105 active:translate-y-1 active:shadow-none transition-all flex items-center gap-2 transform -rotate-2 hover:rotate-0"
+                title="Edit Settings"
+            >
+                <Settings size={24} strokeWidth={2.5} />
+                <span className="font-marker text-xl hidden sm:inline">Settings</span>
+            </button>
+        </div>
+
+        {/* --- TOOLBAR (Right Side) --- */}
+        <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3 flex-wrap justify-end pl-24 sm:pl-0">
              <button onClick={() => setIsStickerMenuOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
                 <Sparkles size={24} strokeWidth={2.5} className="text-slate-900" />
              </button>
@@ -418,20 +472,12 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             {/* 2. Counting down to... */}
             <span className="text-2xl sm:text-3xl md:text-4xl font-marker text-slate-500 mb-2 text-center">Counting down to</span>
             
-            {/* 3. Event Name (Editable with better response) */}
-            <button 
-                onClick={handleOpenEdit}
-                className="group flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full px-2"
-                title="Click to edit"
-            >
-                {/* Dynamically sizing text */}
+            {/* 3. Event Name */}
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full px-2">
                 <h1 className="text-[12vw] sm:text-7xl md:text-8xl font-marker text-slate-900 leading-none drop-shadow-sm text-center break-words max-w-full">
                     {eventName}
                 </h1>
-                <div className="bg-yellow-400 text-slate-900 p-2 rounded-full border-2 border-slate-900 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm shrink-0 scale-75 sm:scale-100">
-                        <Edit3 size={16} strokeWidth={3} />
-                </div>
-            </button>
+            </div>
             
             <div className="mt-8 w-full px-1">
                 <CountdownTimer timeLeft={timeLeft} />
@@ -440,12 +486,23 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
         <TapedPhoto imageSrc={photoData} onImageUpload={updatePhoto} />
 
-        <div className="mt-8 mb-20 text-center z-30 opacity-90 max-w-lg px-6 relative transform -rotate-1">
-             <div className="relative inline-block p-4">
-                 <div className="absolute inset-0 bg-green-200/40 rounded-lg -rotate-1 scale-110 -z-10 blur-[1px]"></div>
-                 <p className="font-marker text-2xl sm:text-4xl text-slate-800 leading-tight">
-                    "Every second that ticks by is just one second closer to making more memories with you."
-                 </p>
+        {/* --- EDITABLE GREEN CARD --- */}
+        <div className="mt-8 mb-20 text-center z-30 max-w-lg px-6 relative transform -rotate-1 group w-full">
+             <div className="relative inline-block p-6 w-full">
+                 {/* Background Blur Blob */}
+                 <div className="absolute inset-0 bg-green-200/40 rounded-lg -rotate-1 scale-110 -z-10 blur-[1px] border-2 border-transparent group-hover:border-green-300/50 transition-colors"></div>
+                 
+                 {/* Editable Text Area */}
+                 <textarea
+                    value={quote}
+                    onChange={(e) => setQuote(e.target.value)}
+                    onBlur={handleQuoteBlur}
+                    placeholder="Write a message here..."
+                    className="w-full bg-transparent border-none text-center font-marker text-2xl sm:text-4xl text-slate-800 leading-tight focus:outline-none resize-none overflow-hidden placeholder:text-slate-400/50"
+                    rows={3}
+                    style={{ minHeight: '120px' }}
+                 />
+                 
              </div>
              <div className="flex items-center justify-center gap-2 mt-4 text-rose-500">
                 <span className="font-marker text-xl">Love always</span>
@@ -461,15 +518,16 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 onRotateStart={(e)=>handleInteractionStart(e,'bucket-list','ROTATE')} 
                 onClick={()=>setIsTodoModalOpen(true)}
             >
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full w-full overflow-hidden">
                     <span className="font-bold text-2xl mb-4 text-rose-500 border-b-2 border-rose-100/50 pb-1">Bucket List</span>
                     {todoItems.length === 0 ? (
                         <p className="text-slate-400 text-lg italic mt-4 text-center">Tap edit to add dreams...</p>
                     ) : (
-                        <ul className="space-y-1">
-                            {todoItems.map((item,k) => (
-                                <li key={k} className="break-words leading-tight">• {item}</li>
+                        <ul className="space-y-1 overflow-hidden">
+                            {todoItems.slice(0, 5).map((item,k) => (
+                                <li key={k} className="break-words leading-tight truncate">• {item}</li>
                             ))}
+                            {todoItems.length > 5 && <li className="text-slate-400 italic text-sm mt-1">...and {todoItems.length - 5} more</li>}
                         </ul>
                     )}
                 </div>

@@ -28,13 +28,13 @@ const TodoModal: React.FC<TodoModalProps> = ({ isOpen, onClose, items, setItems 
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       
       {/* Quirky Theme Card - Matches Sticker Menu */}
-      <div className="relative w-full max-w-md bg-white border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] rounded-xl overflow-hidden flex flex-col max-h-[80vh] transform -rotate-1">
+      <div className="relative w-full max-w-md bg-white border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] rounded-xl overflow-hidden flex flex-col h-[80vh] sm:max-h-[80vh] transform -rotate-1">
         
         {/* Header - Yellow */}
-        <div className="bg-yellow-400 p-4 border-b-4 border-slate-900 flex justify-between items-center relative z-10">
+        <div className="bg-yellow-400 p-4 border-b-4 border-slate-900 flex justify-between items-center relative z-10 shrink-0">
              <h2 className="font-marker text-3xl text-slate-900 tracking-wide">Bucket List</h2>
              <button 
                 onClick={onClose} 
@@ -44,21 +44,21 @@ const TodoModal: React.FC<TodoModalProps> = ({ isOpen, onClose, items, setItems 
              </button>
         </div>
 
-        {/* List Content */}
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-grid-pattern">
+        {/* List Content - Infinite Scroll */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-grid-pattern relative">
             {items.length === 0 ? (
-                <div className="text-center py-10 opacity-50 flex flex-col items-center gap-2">
+                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-50 gap-2">
                     <span className="text-4xl">✨</span>
-                    <span className="font-hand text-xl font-bold text-slate-500">Empty page... <br/> Add a dream!</span>
+                    <span className="font-hand text-xl font-bold text-slate-500 text-center">Empty page... <br/> Add a dream!</span>
                 </div>
             ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-3 pb-4">
                     {items.map((item, index) => (
                         <li key={index} className="flex items-start justify-between bg-white border-2 border-slate-900 p-3 rounded-lg shadow-[2px_2px_0px_0px_rgba(15,23,42,0.1)] group hover:shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] hover:-translate-y-0.5 transition-all">
                             <span className="font-hand text-xl text-slate-800 break-words w-full pr-2 leading-tight font-bold">{item}</span>
                             <button 
                                 onClick={() => handleRemoveItem(index)}
-                                className="text-slate-300 hover:text-rose-500 transition-colors pt-0.5"
+                                className="text-slate-300 hover:text-rose-500 transition-colors pt-0.5 shrink-0"
                             >
                                 <Trash2 size={20} />
                             </button>
@@ -69,7 +69,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ isOpen, onClose, items, setItems 
         </div>
 
         {/* Footer Input */}
-        <div className="p-4 bg-white border-t-4 border-slate-900 z-10">
+        <div className="p-4 bg-white border-t-4 border-slate-900 z-10 shrink-0">
              <form onSubmit={handleAddItem} className="flex gap-3">
                 <input 
                     type="text" 

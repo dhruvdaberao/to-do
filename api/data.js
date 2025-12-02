@@ -53,7 +53,8 @@ const RoomSchema = new mongoose.Schema({
   noteState: { type: Object, default: { x: 0, y: 0, rotation: -2, scale: 1 } },
   photo: { type: String, default: 'us.png' },
   customLibrary: { type: Array, default: [] },
-  chatMessages: { type: Array, default: [] }
+  chatMessages: { type: Array, default: [] },
+  quote: { type: String, default: "Every second that ticks by is just one second closer to making more memories with you." }
 });
 
 let User, Room;
@@ -161,6 +162,7 @@ export default async function handler(req, res) {
           todoItems: [],
           noteState: { x: 0, y: 0, rotation: -2, scale: 1 },
           photo: 'us.png',
+          quote: "Every second that ticks by is just one second closer to making more memories with you."
         }
       });
       return res.status(200).json({ success: true });
