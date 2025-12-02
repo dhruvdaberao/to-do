@@ -106,6 +106,7 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
                                 <button 
                                     onClick={() => {
                                         onAddStickerToCanvas(sticker.src);
+                                        onClose(); // CLOSE MENU ON SELECTION
                                     }}
                                     className="w-full h-full bg-white border-2 border-slate-200 rounded-lg hover:border-slate-800 hover:bg-yellow-50 transition-all p-2 flex items-center justify-center shadow-sm active:scale-95"
                                 >
