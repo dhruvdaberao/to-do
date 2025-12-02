@@ -35,10 +35,6 @@ const StickyNote: React.FC<StickyNoteProps> = ({
     touchAction: 'none',
   };
 
-  const handleDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    onMouseDown(e);
-  };
-
   const stopProp = (e: React.MouseEvent | React.TouchEvent, cb: (e:any)=>void) => {
       e.stopPropagation();
       cb(e);
@@ -51,10 +47,11 @@ const StickyNote: React.FC<StickyNoteProps> = ({
         className="group cursor-grab active:cursor-grabbing select-none"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        onMouseDown={handleDrag}
-        onTouchStart={handleDrag}
+        onMouseDown={onMouseDown}
+        onTouchStart={onMouseDown}
     >
-      <div className="relative w-[340px] sm:w-[400px] min-h-[300px] h-auto bg-[#fef9c3] shadow-[2px_4px_12px_rgba(0,0,0,0.1)] rounded-sm overflow-hidden transition-shadow hover:shadow-xl pb-16">
+      {/* Changed h-[auto] and min-h-[auto] to allow growth */}
+      <div className="relative w-[340px] sm:w-[400px] h-auto min-h-[200px] bg-[#fef9c3] shadow-[2px_4px_12px_rgba(0,0,0,0.1)] rounded-sm overflow-visible transition-shadow hover:shadow-xl pb-12">
         
         {/* Punched Holes */}
         <div className="absolute top-4 left-6 right-6 flex justify-between pointer-events-none z-10">
@@ -90,7 +87,6 @@ const StickyNote: React.FC<StickyNoteProps> = ({
             `}
             onMouseDown={(e) => stopProp(e, onResizeStart)}
             onTouchStart={(e) => stopProp(e, onResizeStart)}
-            title="Resize"
         >
             <Scaling size={18} strokeWidth={2.5} />
         </div>
@@ -103,7 +99,6 @@ const StickyNote: React.FC<StickyNoteProps> = ({
             `}
             onMouseDown={(e) => stopProp(e, onRotateStart)}
             onTouchStart={(e) => stopProp(e, onRotateStart)}
-            title="Rotate"
         >
             <RotateCw size={18} strokeWidth={2.5} />
         </div>

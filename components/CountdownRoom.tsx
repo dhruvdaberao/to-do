@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, MessageCircle, Users, LogOut, Eraser, Share2, Sparkles, X, Save, Settings, Bell } from 'lucide-react';
+import { Heart, MessageCircle, Users, LogOut, Eraser, Share2, Sparkles, X, Edit2, Check } from 'lucide-react';
 import { calculateTimeLeft, TimeLeft, formatDateDisplay } from '../utils/time';
 import CountdownTimer from './CountdownTimer';
 import TapedPhoto from './TapedPhoto';
@@ -50,7 +50,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const [chatMessages, setChatMessages] = useState<any[]>(room.chatMessages || []);
   const [members, setMembers] = useState<string[]>(room.members || []);
   const [musicSrc, setMusicSrc] = useState<string>(room.musicSrc || '');
-  const [statusCard, setStatusCard] = useState(room.statusCard || { image: '', caption: 'Current Vibe', user: '' });
+  const [statusText, setStatusText] = useState<string>(room.statusCard?.caption || '');
 
   // UI State
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -58,9 +58,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isStickerMenuOpen, setIsStickerMenuOpen] = useState(false);
-  const [isEditCountdownOpen, setIsEditCountdownOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false); // For editing event details
   const [hasUnreadMsg, setHasUnreadMsg] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   
   // Interaction Engine State
   const [interaction, setInteraction] = useState<InteractionState>({
@@ -68,40 +67,34 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   });
   const [isOverTrash, setIsOverTrash] = useState(false);
 
-  // Edit Modal State
+  // Edit Modal Inputs
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editName, setEditName] = useState('');
 
-  // Refs
-  const isInteractingRef = useRef(false);
-  const lastLocalUpdateRef = useRef<number>(0);
-  const lastLibraryUpdateRef = useRef<number>(0); // Specific ref for library sync safety
-  const prevChatLenRef = useRef(room.chatMessages?.length || 0);
-  const prevTodoLenRef = useRef(room.todoItems?.length || 0);
-  const prevStatusRef = useRef<string>(JSON.stringify(room.statusCard));
+  // --- SYNC LOCKS (Prevent server overwrites while editing) ---
+  const locks = useRef({
+      stickers: 0,
+      todo: 0,
+      quote: 0,
+      status: 0,
+      details: 0,
+      music: 0
+  });
 
-  // Refs to access current state inside intervals
-  const isTodoModalOpenRef = useRef(isTodoModalOpen);
-  const isEditCountdownOpenRef = useRef(isEditCountdownOpen);
-  const quoteRef = useRef(quote);
-
-  useEffect(() => { isTodoModalOpenRef.current = isTodoModalOpen; }, [isTodoModalOpen]);
-  useEffect(() => { isEditCountdownOpenRef.current = isEditCountdownOpen; }, [isEditCountdownOpen]);
-  useEffect(() => { quoteRef.current = quote; }, [quote]);
-
-  // --- NOTIFICATIONS ---
-  const requestNotifyPermission = () => {
-    if ("Notification" in window) {
-      Notification.requestPermission().then(p => {
-          if (p === 'granted') {
-              setNotificationsEnabled(true);
-              new Notification("Notifications Enabled!", { body: "We'll let you know when things happen.", icon: '/clock.png' });
-          }
-      });
-    }
+  const setLock = (key: keyof typeof locks.current) => {
+      locks.current[key] = Date.now() + 10000; // Lock for 10 seconds
   };
 
+  const isLocked = (key: keyof typeof locks.current) => {
+      return Date.now() < locks.current[key];
+  };
+
+  // Refs for logic
+  const isInteractingRef = useRef(false);
+  const prevChatLenRef = useRef(room.chatMessages?.length || 0);
+
+  // --- NOTIFICATIONS ---
   const triggerNotification = (title: string, body: string) => {
     if ("Notification" in window && Notification.permission === "granted") {
         new Notification(title, { body, icon: '/clock.png' });
@@ -110,8 +103,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
 
   // --- SYNC ENGINE ---
   const syncRoom = async () => {
+    // If we are actively dragging/resizing, do not fetch
     if (isInteractingRef.current) return;
-    if (Date.now() - lastLocalUpdateRef.current < 5000) return;
 
     try {
         const res = await fetch(apiUrl, {
@@ -120,79 +113,54 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             body: JSON.stringify({ action: 'GET_ROOM', payload: { roomId: room.roomId } })
         });
         const data = await res.json();
+        
         if (data.roomId) {
-            // Safety check again before applying
-            if (!isInteractingRef.current && (Date.now() - lastLocalUpdateRef.current > 5000)) {
-                
-                setStickers(data.stickers || []);
-                setNoteState(data.noteState || { x: 0, y: 0, rotation: -2, scale: 1 });
-                setPhotoData(data.photo || 'us.png');
-                setMembers(data.members || []);
-                setMusicSrc(data.musicSrc || '');
+            // Apply updates ONLY if not locked
+            if (!isLocked('stickers')) setStickers(data.stickers || []);
+            
+            if (!isLocked('todo') && !isTodoModalOpen) {
+                setTodoItems(data.todoItems || []);
+                // Todo Notification
+                if ((data.todoItems?.length || 0) > prevChatLenRef.current) {
+                    // triggerNotification("New Bucket List Item!", "Someone added a dream.");
+                }
+            }
+            
+            if (!isLocked('quote')) setQuote(data.quote || "");
+            
+            // Note position sync (bucket list position)
+            if (!isInteractingRef.current) setNoteState(data.noteState || { x: 0, y: 0, rotation: -2, scale: 1 });
+            
+            setPhotoData(data.photo || 'us.png');
+            setMembers(data.members || []);
+            
+            if (!isLocked('music')) setMusicSrc(data.musicSrc || '');
+            if (!isLocked('status')) setStatusText(data.statusCard?.caption || '');
+            
+            setCustomLibrary(data.customLibrary || []);
 
-                // Custom Library Sync Safety
-                if (Date.now() - lastLibraryUpdateRef.current > 5000) {
-                     setCustomLibrary(data.customLibrary || []);
+            // Chat (Always sync)
+            const newMsgs = data.chatMessages || [];
+            if (newMsgs.length > prevChatLenRef.current) {
+                const lastMsg = newMsgs[newMsgs.length - 1];
+                setChatMessages(newMsgs);
+                if (lastMsg.user !== currentUser) {
+                    setHasUnreadMsg(true);
+                    triggerNotification(`Message from ${lastMsg.user}`, lastMsg.text);
                 }
-                
-                // --- NOTIFICATION TRIGGERS ---
-                // 1. Chat
-                const newMsgs = data.chatMessages || [];
-                if (newMsgs.length > prevChatLenRef.current) {
-                    const lastMsg = newMsgs[newMsgs.length - 1];
-                    setChatMessages(newMsgs);
-                    if (lastMsg.user !== currentUser) {
-                        setHasUnreadMsg(true);
-                        triggerNotification(`New Message from ${lastMsg.user}`, lastMsg.text);
-                    }
-                    prevChatLenRef.current = newMsgs.length;
-                }
+                prevChatLenRef.current = newMsgs.length;
+            }
 
-                // 2. Todo List
-                const newTodos = data.todoItems || [];
-                if (!isTodoModalOpenRef.current) {
-                    setTodoItems(newTodos);
-                    if (newTodos.length > prevTodoLenRef.current) {
-                        triggerNotification("Bucket List Updated!", "A new dream was added.");
-                    } else if (newTodos.length < prevTodoLenRef.current && prevTodoLenRef.current > 0) {
-                        // triggerNotification("Bucket List Checked!", "One item done!"); // Optional
-                    }
-                    prevTodoLenRef.current = newTodos.length;
-                }
-
-                // 3. Status Card
-                const newStatus = data.statusCard || { image: '', caption: 'Current Vibe', user: '' };
-                const newStatusStr = JSON.stringify(newStatus);
-                if (newStatusStr !== prevStatusRef.current) {
-                    setStatusCard(newStatus);
-                    if (newStatus.user && newStatus.user !== currentUser) {
-                        triggerNotification("Vibe Check!", `${newStatus.user} updated the status.`);
-                    }
-                    prevStatusRef.current = newStatusStr;
-                }
-
-                // Guard: Don't update event details while editing
-                if (!isEditCountdownOpenRef.current) {
-                    setTargetISO(data.targetISO || room.targetISO);
-                    setEventName(data.eventName || 'Us');
-                }
-                
-                if (data.quote && data.quote !== quoteRef.current) {
-                    setQuote(data.quote);
-                }
+            // Event Details
+            if (!isEditMode && !isLocked('details')) {
+                setTargetISO(data.targetISO || room.targetISO);
+                setEventName(data.eventName || 'Us');
             }
         }
     } catch (e) { console.error("Sync Error", e); }
   };
 
   const pushUpdates = useCallback(async (updates: any) => {
-    lastLocalUpdateRef.current = Date.now();
-    
-    // If pushing library updates, set specific ref
-    if (updates.customLibrary) {
-        lastLibraryUpdateRef.current = Date.now();
-    }
-
     try {
         await fetch(apiUrl, {
             method: 'POST',
@@ -212,9 +180,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         const left = calculateTimeLeft(targetISO);
         setTimeLeft(left);
         
-        // Notification for Completion (Once)
         if (left.isAnniversary && !notifiedComplete) {
-            triggerNotification("🎉 It's Time! 🎉", `The countdown to ${eventName} is over! Enjoy the moment.`);
+            triggerNotification("🎉 It's Time! 🎉", `The countdown to ${eventName} is over!`);
             notifiedComplete = true;
         }
 
@@ -249,36 +216,53 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     if (isChatOpen) setHasUnreadMsg(false);
   }, [isChatOpen]);
 
-  const updateTodoItems = (items: string[]) => {
+  // --- HANDLERS ---
+
+  const handleTodoUpdate = (items: string[]) => {
+      setLock('todo');
       setTodoItems(items);
-      prevTodoLenRef.current = items.length; // Update local ref immediately so we don't notify ourselves
       pushUpdates({ todoItems: items });
   };
   
-  const updatePhoto = (data: string) => {
+  const handlePhotoUpdate = (data: string) => {
       setPhotoData(data);
       pushUpdates({ photo: data });
   };
 
-  const updateStatusCard = (data: { image: string, caption: string, user: string }) => {
-      setStatusCard(data);
-      prevStatusRef.current = JSON.stringify(data);
-      pushUpdates({ statusCard: data });
+  const handleStatusUpdate = (text: string) => {
+      setLock('status');
+      setStatusText(text);
+      pushUpdates({ statusCard: { caption: text, user: currentUser } });
   };
   
+  const handleQuoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setLock('quote');
+      setQuote(e.target.value);
+  };
+
   const handleQuoteBlur = () => {
       pushUpdates({ quote });
   };
 
+  const handleMusicUpdate = (src: string) => {
+      setLock('music');
+      setMusicSrc(src);
+      pushUpdates({ musicSrc: src });
+  };
+
   const handleClearPage = async () => {
-    if(!window.confirm("Clear the whole page? This cannot be undone.")) return;
+    if(!window.confirm("Reset everything? (Photos, stickers, lists will be cleared)")) return;
+    // Reset local
     setStickers([]);
     setTodoItems([]);
     setPhotoData('us.png');
     setMusicSrc('');
-    setStatusCard({ image: '', caption: 'Current Vibe', user: '' });
+    setStatusText('');
     setQuote("Every second that ticks by is just one second closer to making more memories with you.");
-    lastLocalUpdateRef.current = Date.now();
+    
+    // Reset locks to allow instant sync
+    locks.current = { stickers: 0, todo: 0, quote: 0, status: 0, details: 0, music: 0 };
+
     await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -286,15 +270,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     });
   };
 
-  const handleSendMessage = (text: string) => {
-    const msg = { id: Date.now(), user: currentUser, text, timestamp: new Date().toISOString() };
-    const newMsgs = [...chatMessages, msg];
-    setChatMessages(newMsgs);
-    prevChatLenRef.current = newMsgs.length;
-    pushUpdates({ chatMessages: newMsgs });
-  };
-
-  // --- INTERACTION ENGINE ---
+  // --- INTERACTION ENGINE (Drag/Drop) ---
   const handleInteractionStart = (e: any, id: string, mode: InteractionMode) => {
       e.preventDefault(); 
       e.stopPropagation();
@@ -306,8 +282,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       else target = stickers.find(s => s.id === id);
 
       if (!target) return;
-      isInteractingRef.current = true; 
-      lastLocalUpdateRef.current = Date.now(); 
+      isInteractingRef.current = true;
+      // Lock stickers during interaction
+      setLock('stickers');
 
       setInteraction({
           mode, targetId: id, startMouse: { x: clientX, y: clientY }, initialData: { ...target }
@@ -347,16 +324,21 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
       if (!isInteractingRef.current) return;
       
       if (interaction.mode === 'DRAG' && isOverTrash && interaction.targetId && interaction.targetId !== 'bucket-list') {
+          // DELETE STICKER
           const newStickers = stickers.filter(s => s.id !== interaction.targetId);
           setStickers(newStickers);
+          setLock('stickers'); // Important: Lock to prevent old stickers coming back
           pushUpdates({ stickers: newStickers });
       } else {
+          // SAVE MOVE
           if (interaction.targetId === 'bucket-list') pushUpdates({ noteState });
-          else pushUpdates({ stickers });
+          else {
+              setLock('stickers');
+              pushUpdates({ stickers });
+          }
       }
       
       isInteractingRef.current = false;
-      lastLocalUpdateRef.current = Date.now();
       setInteraction(prev => ({ ...prev, mode: 'IDLE', targetId: null }));
       setIsOverTrash(false);
   }, [interaction, isOverTrash, stickers, noteState, pushUpdates]);
@@ -375,42 +357,40 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   }, [handleGlobalMove, handleGlobalEnd]);
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 sm:p-6 relative overflow-x-hidden bg-grid-pattern pb-40">
+    <div className="min-h-screen w-full flex flex-col items-center p-4 relative overflow-x-hidden bg-grid-pattern pb-40">
         
         {timeLeft.isAnniversary && <Confetti />}
 
-        {/* --- SETTINGS BUTTON (Left Side) --- */}
-        <div className="fixed top-4 left-4 z-[90]">
-            <button 
-                onClick={() => setIsEditCountdownOpen(true)}
-                className="group relative bg-yellow-300 text-slate-900 border-4 border-slate-900 rounded-lg p-3 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] hover:scale-105 active:translate-y-1 active:shadow-none transition-all flex items-center gap-2 transform -rotate-2 hover:rotate-0"
-            >
-                <Settings size={24} strokeWidth={2.5} />
-                <span className="font-marker text-xl hidden sm:inline">Settings</span>
-            </button>
-        </div>
+        {/* --- TOP HEADER ICONS (Single Line) --- */}
+        <div className="fixed top-4 left-0 w-full z-[90] px-4 flex justify-between items-start pointer-events-none">
+             
+             {/* Left Spacer (Or user avatar if needed later) */}
+             <div className="pointer-events-auto">
+                {/* Removed Settings Button from here */}
+             </div>
 
-        {/* --- TOOLBAR (Right Side) --- */}
-        <div className="fixed top-4 right-4 z-[90] flex flex-row gap-2 sm:gap-3 flex-wrap justify-end pl-24 sm:pl-0">
-             <button onClick={() => setIsStickerMenuOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
-                <Sparkles size={24} strokeWidth={2.5} className="text-slate-900" />
-             </button>
-             <button onClick={() => setIsShareOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
-                <Share2 size={24} strokeWidth={2.5} className="text-slate-900" />
-             </button>
-             <button onClick={() => setIsPeopleOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
-                <Users size={24} strokeWidth={2.5} className="text-slate-900 group-hover:text-blue-500" />
-             </button>
-             <button onClick={() => setIsChatOpen(true)} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
-                <MessageCircle size={24} strokeWidth={2.5} className="text-slate-900 group-hover:text-green-500" />
-                {hasUnreadMsg && <span className="absolute -top-2 -right-2 w-4 h-4 bg-rose-500 rounded-full border-2 border-white animate-bounce"></span>}
-             </button>
-             <button onClick={handleClearPage} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-rose-100 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-105 active:translate-y-1 active:shadow-none transition-all">
-                <Eraser size={24} strokeWidth={2.5} className="text-rose-600" />
-             </button>
-             <button onClick={onExit} className="group relative w-12 h-12 sm:w-14 sm:h-14 bg-slate-900 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(255,255,255,0.5)] flex items-center justify-center hover:scale-105 active:translate-y-1 transition-all">
-                <LogOut size={24} strokeWidth={2.5} className="text-yellow-400" />
-             </button>
+             {/* Right Icons Row */}
+             <div className="flex gap-2 pointer-events-auto">
+                 <button onClick={() => setIsStickerMenuOpen(true)} className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-400 border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Sparkles size={20} className="text-slate-900" />
+                 </button>
+                 <button onClick={() => setIsShareOpen(true)} className="w-10 h-10 sm:w-12 sm:h-12 bg-white border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Share2 size={20} className="text-slate-900" />
+                 </button>
+                 <button onClick={() => setIsPeopleOpen(true)} className="w-10 h-10 sm:w-12 sm:h-12 bg-white border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Users size={20} className="text-slate-900" />
+                 </button>
+                 <button onClick={() => setIsChatOpen(true)} className="relative w-10 h-10 sm:w-12 sm:h-12 bg-white border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <MessageCircle size={20} className="text-slate-900" />
+                    {hasUnreadMsg && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border border-white animate-bounce"></span>}
+                 </button>
+                 <button onClick={handleClearPage} className="w-10 h-10 sm:w-12 sm:h-12 bg-rose-100 border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Eraser size={20} className="text-rose-600" />
+                 </button>
+                 <button onClick={onExit} className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 border-2 sm:border-4 border-slate-900 rounded-xl shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <LogOut size={20} className="text-yellow-400" />
+                 </button>
+             </div>
         </div>
 
         <StickerMenu 
@@ -419,11 +399,12 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             stickerLibrary={[...AVAILABLE_STICKERS, ...customLibrary]} 
             onAddStickerToCanvas={(src) => {
                 const newS = { id: `s-${Date.now()}-${Math.random()}`, type: 'image' as const, src, x: window.innerWidth/2 - 50, y: window.scrollY + 300, rotation: (Math.random()*20)-10, scale: 1 };
-                setStickers(prev => [...prev, newS]);
-                pushUpdates({ stickers: [...stickers, newS] });
+                const updated = [...stickers, newS];
+                setStickers(updated);
+                setLock('stickers');
+                pushUpdates({ stickers: updated });
             }}
             onUploadStickerToLibrary={(src) => {
-                // Add new sticker to start of list
                 const newLib = [{id:`c-${Date.now()}-${Math.random()}`, src, label:'Custom'}, ...customLibrary];
                 setCustomLibrary(newLib);
                 pushUpdates({ customLibrary: newLib });
@@ -437,39 +418,27 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         
         <ShareModal isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} roomId={room.roomId} pin={room.pin} />
         <TrashBin isVisible={interaction.mode === 'DRAG' && interaction.targetId !== 'bucket-list'} isHovered={isOverTrash} />
-        <TodoModal isOpen={isTodoModalOpen} onClose={()=>setIsTodoModalOpen(false)} items={todoItems} setItems={updateTodoItems} />
+        <TodoModal isOpen={isTodoModalOpen} onClose={()=>setIsTodoModalOpen(false)} items={todoItems} setItems={handleTodoUpdate} />
 
-        {/* SETTINGS MODAL */}
-        {isEditCountdownOpen && (
+        {/* --- EDIT DETAILS MODAL --- */}
+        {isEditMode && (
             <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white w-full max-w-sm rounded-xl border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] overflow-hidden transform rotate-1 p-6">
+                <div className="bg-white w-full max-w-sm rounded-xl border-4 border-slate-900 shadow-2xl p-6">
                     <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-marker text-3xl">Edit Details</h3>
-                        <button onClick={() => setIsEditCountdownOpen(false)}><X size={28} /></button>
+                        <h3 className="font-marker text-3xl">Edit Countdown</h3>
+                        <button onClick={() => setIsEditMode(false)}><X size={28} /></button>
                     </div>
-                    
-                    {/* Notification Enable Button */}
-                    <button 
-                        onClick={requestNotifyPermission}
-                        className={`w-full mb-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 border-2 transition-all
-                            ${notificationsEnabled ? 'bg-green-100 border-green-500 text-green-700' : 'bg-slate-100 border-slate-300 text-slate-500 hover:bg-yellow-100 hover:text-slate-900 hover:border-yellow-400'}
-                        `}
-                    >
-                        <Bell size={20} />
-                        {notificationsEnabled ? 'Notifications Active' : 'Enable Notifications'}
-                    </button>
-
                     <div className="space-y-4">
                         <div>
-                            <label className="font-bold text-sm text-slate-500 uppercase">Event Name</label>
+                            <label className="font-bold text-xs uppercase text-slate-400">Title</label>
                             <input type="text" value={editName || eventName} onChange={e => setEditName(e.target.value)} className="w-full border-2 border-slate-900 rounded-lg p-2 font-hand font-bold text-xl" />
                         </div>
                         <div>
-                            <label className="font-bold text-sm text-slate-500 uppercase">Target Date</label>
+                             <label className="font-bold text-xs uppercase text-slate-400">Date</label>
                             <input type="date" value={editDate || targetISO.split('T')[0]} onChange={e => setEditDate(e.target.value)} className="w-full border-2 border-slate-900 rounded-lg p-2 font-hand font-bold text-xl" />
                         </div>
                         <div>
-                            <label className="font-bold text-sm text-slate-500 uppercase">Target Time</label>
+                             <label className="font-bold text-xs uppercase text-slate-400">Time</label>
                             <input type="time" value={editTime || new Date(targetISO).toTimeString().slice(0, 5)} onChange={e => setEditTime(e.target.value)} className="w-full border-2 border-slate-900 rounded-lg p-2 font-hand font-bold text-xl" />
                         </div>
                         <button 
@@ -480,8 +449,8 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                                 const newISO = combined.toISOString();
                                 setTargetISO(newISO);
                                 setEventName(editName || eventName);
-                                setIsEditCountdownOpen(false);
-                                lastLocalUpdateRef.current = Date.now();
+                                setIsEditMode(false);
+                                setLock('details');
                                 fetch(apiUrl, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -491,64 +460,84 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                                     })
                                 });
                             }} 
-                            className="w-full bg-slate-900 text-yellow-400 py-3 rounded-lg font-bold text-xl shadow-[4px_4px_0px_0px_#facc15] hover:translate-y-0.5 active:shadow-none transition-all flex justify-center gap-2"
+                            className="w-full bg-slate-900 text-yellow-400 py-3 rounded-lg font-bold text-xl hover:scale-105 transition-transform flex justify-center gap-2"
                         >
-                            <Save /> Save Changes
+                            <Check /> Save
                         </button>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* --- HERO SECTION --- */}
-        <div className="flex flex-col items-center justify-center z-10 mt-20 sm:mt-12 mb-10 w-full max-w-4xl px-2">
+        {/* --- MAIN CONTENT --- */}
+        <div className="flex flex-col items-center justify-center z-10 mt-16 sm:mt-20 mb-10 w-full max-w-4xl px-2">
             
-            <div className="inline-flex items-center justify-center bg-slate-900 text-sky-200 px-4 py-2 sm:px-6 sm:py-2 rounded-xl border-4 border-slate-900 shadow-[4px_4px_0px_0px_rgba(203,213,225,1)] mb-4 transform -rotate-1 max-w-[95vw] sm:max-w-full">
-                 <span className="font-bold font-sans text-[10px] sm:text-xs tracking-widest uppercase mr-2 text-yellow-400 shrink-0">Target:</span>
-                 <span className="font-hand font-bold text-md sm:text-xl uppercase tracking-wide leading-tight break-words text-center">
+            <div className="inline-flex items-center justify-center bg-slate-900 text-sky-200 px-4 py-1.5 rounded-full border-2 border-slate-900 shadow-sm mb-4 transform -rotate-1">
+                 <span className="font-bold font-sans text-[10px] tracking-widest uppercase mr-2 text-yellow-400 shrink-0">Target:</span>
+                 <span className="font-hand font-bold text-sm uppercase tracking-wide">
                     {formatDateDisplay(targetISO)}
                  </span>
             </div>
 
-            <span className="text-2xl sm:text-3xl md:text-4xl font-marker text-slate-500 mb-2 text-center">Counting down to</span>
+            <span className="text-2xl sm:text-3xl font-marker text-slate-500 mb-1 text-center">Counting down to</span>
             
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full px-2">
-                <h1 className="text-[12vw] sm:text-7xl md:text-8xl font-marker text-slate-900 leading-none drop-shadow-sm text-center break-words max-w-full">
+            <div className="relative group flex items-center justify-center gap-3 mb-4">
+                <h1 className="text-[10vw] sm:text-6xl md:text-7xl font-marker text-slate-900 leading-none drop-shadow-sm text-center">
                     {eventName}
                 </h1>
+                {/* RESTORED EDIT PEN ICON */}
+                <button 
+                    onClick={() => setIsEditMode(true)}
+                    className="opacity-50 group-hover:opacity-100 hover:bg-yellow-200 p-2 rounded-full transition-all"
+                    title="Edit Countdown"
+                >
+                    <Edit2 size={24} className="text-slate-600" />
+                </button>
             </div>
 
-            {/* --- MUSIC PLAYER BAR (Between Title and Timer) --- */}
-            <MusicPlayer src={musicSrc} onUpload={(src) => { setMusicSrc(src); pushUpdates({ musicSrc: src }); }} />
+            {/* INSTAGRAM STYLE MUSIC PLAYER */}
+            <MusicPlayer src={musicSrc} onUpload={handleMusicUpdate} onRemove={() => handleMusicUpdate('')} />
             
             <div className="mt-4 w-full px-1">
                 <CountdownTimer timeLeft={timeLeft} />
             </div>
         </div>
 
-        <TapedPhoto imageSrc={photoData} onImageUpload={updatePhoto} />
+        <TapedPhoto imageSrc={photoData} onImageUpload={handlePhotoUpdate} />
 
-        {/* --- EDITABLE GREEN CARD --- */}
-        <div className="mt-8 mb-20 text-center z-30 max-w-lg px-6 relative transform -rotate-1 group w-full">
-             <div className="relative inline-block p-6 w-full">
-                 <div className="absolute inset-0 bg-green-200/40 rounded-lg -rotate-1 scale-110 -z-10 blur-[1px] border-2 border-transparent group-hover:border-green-300/50 transition-colors"></div>
-                 <textarea
-                    value={quote}
-                    onChange={(e) => setQuote(e.target.value)}
-                    onBlur={handleQuoteBlur}
-                    placeholder="Write a message here..."
-                    className="w-full bg-transparent border-none text-center font-marker text-2xl sm:text-4xl text-slate-800 leading-tight focus:outline-none resize-none overflow-hidden placeholder:text-slate-400/50"
-                    rows={3}
-                    style={{ minHeight: '120px' }}
-                 />
+        {/* --- EXPANDING GREEN CARD --- */}
+        <div className="mt-8 mb-12 w-full max-w-lg px-4 relative transform -rotate-1 group z-30">
+             <div className="relative w-full">
+                 <div className="absolute inset-0 bg-green-100/60 rounded-xl -rotate-1 scale-[1.02] -z-10 blur-[1px]"></div>
+                 
+                 {/* Auto-growing Textarea */}
+                 <div 
+                    className="w-full min-h-[100px] p-6 bg-transparent text-center font-marker text-2xl sm:text-3xl text-slate-800 leading-relaxed outline-none whitespace-pre-wrap"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                        const val = e.currentTarget.innerText;
+                        if (val !== quote) {
+                            setLock('quote');
+                            setQuote(val);
+                            pushUpdates({ quote: val });
+                        }
+                    }}
+                 >
+                    {quote}
+                 </div>
+
              </div>
-             <div className="flex items-center justify-center gap-2 mt-4 text-rose-500">
-                <span className="font-marker text-xl">Love always</span>
-                <Heart size={20} fill="currentColor" className="animate-pulse" />
+             <div className="flex items-center justify-center gap-2 mt-2 text-rose-500 opacity-80">
+                <Heart size={16} fill="currentColor" />
              </div>
         </div>
 
-        <div className="z-10 relative w-full flex justify-center mb-16 h-[300px]">
+        {/* --- SIMPLE STATUS CARD --- */}
+        <StatusCard text={statusText} onUpdate={handleStatusUpdate} />
+
+        {/* --- BUCKET LIST STICKY NOTE --- */}
+        <div className="z-10 relative w-full flex justify-center mb-40 min-h-[300px]">
             <StickyNote 
                 data={noteState} 
                 onMouseDown={(e)=>handleInteractionStart(e,'bucket-list','DRAG')} 
@@ -556,24 +545,25 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 onRotateStart={(e)=>handleInteractionStart(e,'bucket-list','ROTATE')} 
                 onClick={()=>setIsTodoModalOpen(true)}
             >
-                <div className="flex flex-col h-full w-full overflow-hidden">
-                    <span className="font-bold text-2xl mb-4 text-rose-500 border-b-2 border-rose-100/50 pb-1">Bucket List</span>
-                    {todoItems.length === 0 ? (
-                        <p className="text-slate-400 text-lg italic mt-4 text-center">Tap edit to add dreams...</p>
-                    ) : (
-                        <ul className="space-y-1 overflow-hidden">
-                            {todoItems.slice(0, 5).map((item,k) => (
-                                <li key={k} className="break-words leading-tight truncate">• {item}</li>
-                            ))}
-                            {todoItems.length > 5 && <li className="text-slate-400 italic text-sm mt-1">...and {todoItems.length - 5} more</li>}
-                        </ul>
-                    )}
+                <div className="flex flex-col h-full w-full">
+                    <span className="font-bold text-2xl mb-4 text-rose-500 border-b-2 border-rose-100/50 pb-1 text-center">Bucket List</span>
+                    
+                    {/* FULL LIST RENDERED */}
+                    <ul className="space-y-1 w-full">
+                        {todoItems.length === 0 ? (
+                            <li className="text-slate-400 text-lg italic text-center py-4">Tap to add dreams...</li>
+                        ) : (
+                            todoItems.map((item, k) => (
+                                <li key={k} className="leading-tight flex items-start text-left text-lg">
+                                    <span className="mr-2">•</span>
+                                    <span className="break-words">{item}</span>
+                                </li>
+                            ))
+                        )}
+                    </ul>
                 </div>
             </StickyNote>
         </div>
-
-        {/* --- STATUS CARD (Fixed at bottom) --- */}
-        <StatusCard data={statusCard} onUpdate={updateStatusCard} currentUser={currentUser} />
 
         {/* STICKERS */}
         {stickers.map(s => (
@@ -586,7 +576,14 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             />
         ))}
 
-        <ChatDrawer isOpen={isChatOpen} onClose={()=>setIsChatOpen(false)} messages={chatMessages} onSend={handleSendMessage} currentUser={currentUser} />
+        <ChatDrawer isOpen={isChatOpen} onClose={()=>setIsChatOpen(false)} messages={chatMessages} onSend={(text) => {
+            const msg = { id: Date.now(), user: currentUser, text, timestamp: new Date().toISOString() };
+            const newMsgs = [...chatMessages, msg];
+            setChatMessages(newMsgs);
+            prevChatLenRef.current = newMsgs.length;
+            pushUpdates({ chatMessages: newMsgs });
+        }} currentUser={currentUser} />
+        
         <PeopleList isOpen={isPeopleOpen} onClose={()=>setIsPeopleOpen(false)} members={members} />
 
     </div>
