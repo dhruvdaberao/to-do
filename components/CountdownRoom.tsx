@@ -45,6 +45,10 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     return fallback;
   };
 
+  // Helper to ensure we don't crash on null arrays
+  const safeArray = (val: any) => Array.isArray(val) ? val : [];
+  const safeObject = (val: any, def: any) => (val && typeof val === 'object') ? val : def;
+
   // --- STATE ---
   const [targetISO, setTargetISO] = useState(getCachedState('targetISO', room.targetISO || new Date().toISOString()));
   const [eventName, setEventName] = useState(getCachedState('eventName', room.eventName || 'Us'));
@@ -52,13 +56,13 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(targetISO));
   
-  const [stickers, setStickers] = useState<StickerData[]>(() => getCachedState('stickers', room.stickers || []));
-  const [todoItems, setTodoItems] = useState<string[]>(() => getCachedState('todoItems', room.todoItems || []));
-  const [noteState, setNoteState] = useState<NoteData>(() => getCachedState('noteState', room.noteState || { x: 0, y: 0, rotation: -2, scale: 1 }));
+  const [stickers, setStickers] = useState<StickerData[]>(() => safeArray(getCachedState('stickers', room.stickers)));
+  const [todoItems, setTodoItems] = useState<string[]>(() => safeArray(getCachedState('todoItems', room.todoItems)));
+  const [noteState, setNoteState] = useState<NoteData>(() => safeObject(getCachedState('noteState', room.noteState), { x: 0, y: 0, rotation: -2, scale: 1 }));
   const [photoData, setPhotoData] = useState<string>(() => getCachedState('photo', room.photo || 'us.png'));
-  const [customLibrary, setCustomLibrary] = useState<StickerDefinition[]>(() => getCachedState('customLibrary', room.customLibrary || []));
-  const [chatMessages, setChatMessages] = useState<any[]>(() => getCachedState('chatMessages', room.chatMessages || []));
-  const [members, setMembers] = useState<string[]>(room.members || []);
+  const [customLibrary, setCustomLibrary] = useState<StickerDefinition[]>(() => safeArray(getCachedState('customLibrary', room.customLibrary)));
+  const [chatMessages, setChatMessages] = useState<any[]>(() => safeArray(getCachedState('chatMessages', room.chatMessages)));
+  const [members, setMembers] = useState<string[]>(safeArray(room.members));
   const [musicSrc, setMusicSrc] = useState<string>(() => getCachedState('musicSrc', room.musicSrc || ''));
 
   // UI State
@@ -128,21 +132,21 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         const data = await res.json();
         
         if (data.roomId) {
-            setStickers(data.stickers || []);
+            setStickers(safeArray(data.stickers));
             
             if (!isTodoModalOpen) {
-                setTodoItems(data.todoItems || []);
+                setTodoItems(safeArray(data.todoItems));
             }
             
             setQuote(data.quote || "");
-            setNoteState(data.noteState || { x: 0, y: 0, rotation: -2, scale: 1 });
+            setNoteState(safeObject(data.noteState, { x: 0, y: 0, rotation: -2, scale: 1 }));
             setPhotoData(data.photo || 'us.png');
-            setMembers(data.members || []);
+            setMembers(safeArray(data.members));
             setMusicSrc(data.musicSrc || '');
-            setCustomLibrary(data.customLibrary || []);
+            setCustomLibrary(safeArray(data.customLibrary));
 
             // Chat (Always sync)
-            const newMsgs = data.chatMessages || [];
+            const newMsgs = safeArray(data.chatMessages);
             if (newMsgs.length > prevChatLenRef.current) {
                 const lastMsg = newMsgs[newMsgs.length - 1];
                 setChatMessages(newMsgs);
