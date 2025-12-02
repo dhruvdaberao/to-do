@@ -8,21 +8,37 @@ import CountdownRoom from './CountdownRoom';
 const API_URL = (import.meta as any).env?.VITE_API_URL || "/api/data";
 
 const App: React.FC = () => {
-  // Initialize User directly from storage for instant load
-  const [user, setUser] = useState<{ username: string } | null>(() => {
-      try {
-          const saved = localStorage.getItem('app_user');
-          return saved ? JSON.parse(saved) : null;
-      } catch (e) { return null; }
-  });
-
-  // Initialize Screen based on user existence
-  const [screen, setScreen] = useState<'AUTH' | 'DASHBOARD' | 'ROOM'>(() => {
-      return localStorage.getItem('app_user') ? 'DASHBOARD' : 'AUTH';
-  });
+  // User Session State
+  const [user, setUser] = useState<{ username: string } | null>(null);
+  
+  // Screen Routing State
+  const [screen, setScreen] = useState<'AUTH' | 'DASHBOARD' | 'ROOM'>('AUTH');
   
   // Active Room Data
   const [activeRoom, setActiveRoom] = useState<any>(null);
+  
+  // Initial Load Check
+  useEffect(() => {
+    try {
+        const savedUser = localStorage.getItem('app_user');
+        if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            if (parsed && parsed.username) {
+                setUser(parsed);
+                setScreen('DASHBOARD');
+            } else {
+                // Invalid data, clear it
+                localStorage.removeItem('app_user');
+                setScreen('AUTH');
+            }
+        } else {
+            setScreen('AUTH');
+        }
+    } catch (e) {
+        localStorage.removeItem('app_user');
+        setScreen('AUTH');
+    }
+  }, []);
 
   const handleAuthenticate = (userData: { username: string }) => {
       setUser(userData);
@@ -42,10 +58,6 @@ const App: React.FC = () => {
 
   // --- RENDER ROUTER ---
 
-  if (screen === 'AUTH') {
-      return <AuthScreen onAuthenticate={handleAuthenticate} apiUrl={API_URL} />;
-  }
-
   if (screen === 'DASHBOARD' && user) {
       return <Dashboard username={user.username} onJoinRoom={handleJoinRoom} apiUrl={API_URL} />;
   }
@@ -61,7 +73,18 @@ const App: React.FC = () => {
       );
   }
 
-  return <div className="p-10 text-center font-hand text-xl animate-pulse mt-20">Loading...</div>;
+  if (screen === 'AUTH') {
+      return <AuthScreen onAuthenticate={handleAuthenticate} apiUrl={API_URL} />;
+  }
+
+  // Fallback / Loading State (Visible)
+  return (
+    <div className="min-h-screen bg-grid-pattern flex items-center justify-center">
+        <div className="p-10 text-center font-hand text-xl animate-pulse text-slate-500">
+            Loading Application...
+        </div>
+    </div>
+  );
 };
 
 export default App;

@@ -34,7 +34,6 @@ interface InteractionState {
 
 const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl, onExit }) => {
   // --- CACHE HELPER ---
-  // Loads data from local storage first to prevent "old state" flash
   const getCachedState = (key: string, fallback: any) => {
     try {
         const cached = localStorage.getItem(`room_data_${room.roomId}`);
@@ -53,7 +52,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   
   const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(targetISO));
   
-  // Synced Data - Initializing from Cache
   const [stickers, setStickers] = useState<StickerData[]>(() => getCachedState('stickers', room.stickers || []));
   const [todoItems, setTodoItems] = useState<string[]>(() => getCachedState('todoItems', room.todoItems || []));
   const [noteState, setNoteState] = useState<NoteData>(() => getCachedState('noteState', room.noteState || { x: 0, y: 0, rotation: -2, scale: 1 }));
@@ -84,9 +82,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   const [editName, setEditName] = useState('');
 
   // --- SYNC CONTROL ---
-  // "Ghosting" Prevention:
-  // 1. lastInteractionTime: Pauses sync after user action.
-  // 2. isSavingRef: ABSOLUTE LOCK while data is being pushed to server.
   const lastInteractionTime = useRef(0);
   const isSavingRef = useRef(false);
   const isInteractingRef = useRef(false);
@@ -97,7 +92,6 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   };
 
   // --- PERSIST CACHE ---
-  // Save to local storage whenever important state changes
   useEffect(() => {
     const dataToCache = {
         stickers, todoItems, noteState, photo: photoData,
@@ -116,11 +110,13 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
   };
 
   // --- SYNC ENGINE ---
-  const syncRoom = async () => {
+  const syncRoom = useCallback(async (force = false) => {
     // CRITICAL: Do not fetch if user is interacting, recently interacted, or CURRENTLY SAVING.
-    // This prevents the "Disappearing Sticker" bug where server overwrites local state.
-    if (isSavingRef.current || isInteractingRef.current || (Date.now() - lastInteractionTime.current < 4000)) {
-        return;
+    // UNLESS 'force' is true (used on initial mount).
+    if (!force) {
+        if (isSavingRef.current || isInteractingRef.current || (Date.now() - lastInteractionTime.current < 4000)) {
+            return;
+        }
     }
 
     try {
@@ -164,10 +160,10 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
             }
         }
     } catch (e) { console.error("Sync Error", e); }
-  };
+  }, [apiUrl, room.roomId, currentUser, isTodoModalOpen, isEditMode, room.targetISO]);
 
   const pushUpdates = useCallback(async (updates: any) => {
-    // Lock sync process
+    // Lock sync process immediately
     isSavingRef.current = true;
     reportInteraction();
 
@@ -183,17 +179,17 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     } catch (e) { 
         console.error("Push Error", e); 
     } finally {
-        // Keep lock for a moment to ensure server consistency
+        // Keep lock for 3 seconds to ensure server consistency and prevent "disappearing" items
         setTimeout(() => {
             isSavingRef.current = false;
-        }, 1000);
+        }, 3000);
     }
   }, [apiUrl, room.roomId]);
 
   // Timer & Reset Logic
   useEffect(() => {
     // Force immediate sync on mount to get fresh data
-    syncRoom();
+    syncRoom(true);
 
     let notifiedComplete = false;
     const tick = () => {
@@ -228,9 +224,9 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
     
     tick();
     const timer = setInterval(tick, 1000);
-    const poller = setInterval(syncRoom, 2000); 
+    const poller = setInterval(() => syncRoom(false), 2000); 
     return () => { clearInterval(timer); clearInterval(poller); };
-  }, [targetISO, eventName, apiUrl, room.roomId]);
+  }, [targetISO, eventName, apiUrl, room.roomId, syncRoom]);
 
   useEffect(() => {
     if (isChatOpen) setHasUnreadMsg(false);
@@ -278,7 +274,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         body: JSON.stringify({ action: 'CLEAR_CANVAS', payload: { roomId: room.roomId } })
     });
     
-    setTimeout(() => { isSavingRef.current = false; }, 1000);
+    setTimeout(() => { isSavingRef.current = false; }, 3000);
   };
 
   // --- INTERACTION ENGINE (Drag/Drop) ---
@@ -412,7 +408,7 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 const newS = { id: `s-${Date.now()}-${Math.random()}`, type: 'image' as const, src, x: window.innerWidth/2 - 50, y: window.scrollY + 300, rotation: (Math.random()*20)-10, scale: 1 };
                 const updated = [...stickers, newS];
                 setStickers(updated);
-                // Call pushUpdates directly to trigger the save lock
+                // Trigger save immediately with lock
                 pushUpdates({ stickers: updated });
             }}
             onUploadStickersToLibrary={(srcs) => {
