@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 
 // --- 1. CONFIGURATION & CACHING ---
@@ -54,7 +53,10 @@ const RoomSchema = new mongoose.Schema({
   photo: { type: String, default: 'us.png' },
   customLibrary: { type: Array, default: [] },
   chatMessages: { type: Array, default: [] },
-  quote: { type: String, default: "Every second that ticks by is just one second closer to making more memories with you." }
+  quote: { type: String, default: "Every second that ticks by is just one second closer to making more memories with you." },
+  // NEW FIELDS
+  musicSrc: { type: String, default: '' },
+  statusCard: { type: Object, default: { image: '', caption: 'Current Vibe', user: '' } }
 });
 
 let User, Room;
@@ -65,6 +67,15 @@ try {
   User = mongoose.model('User', UserSchema);
   Room = mongoose.model('Room', RoomSchema);
 }
+
+// Increase payload limit for images/music
+export const config = {
+    api: {
+        bodyParser: {
+            sizeLimit: '10mb',
+        },
+    },
+};
 
 // --- 3. SERVERLESS HANDLER ---
 export default async function handler(req, res) {
@@ -128,7 +139,6 @@ export default async function handler(req, res) {
 
     if (action === 'GET_USER_ROOMS') {
         const { username } = payload;
-        // Fetch all rooms where username is in the members array
         const rooms = await Room.find({ members: username });
         return res.status(200).json({ success: true, rooms });
     }
@@ -162,7 +172,9 @@ export default async function handler(req, res) {
           todoItems: [],
           noteState: { x: 0, y: 0, rotation: -2, scale: 1 },
           photo: 'us.png',
-          quote: "Every second that ticks by is just one second closer to making more memories with you."
+          quote: "Every second that ticks by is just one second closer to making more memories with you.",
+          musicSrc: '',
+          statusCard: { image: '', caption: 'Current Vibe', user: '' }
         }
       });
       return res.status(200).json({ success: true });

@@ -24,17 +24,9 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
 
   const processImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      if (file.type === 'image/gif') {
-        if (file.size > 2 * 1024 * 1024) {
-             alert("GIF too large (Max 2MB)");
-             reject("File too large");
-             return;
-        }
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (e) => resolve(e.target?.result as string);
-        return;
-      }
+      // Aggressively compress to ensure it saves to MongoDB
+      const MAX_SIZE = 250; 
+      
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (event) => {
@@ -42,39 +34,52 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 300;
           let width = img.width;
           let height = img.height;
+          
           if (width > height) {
             if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
           } else {
             if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
           }
+          
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           if (ctx) {
              ctx.drawImage(img, 0, 0, width, height);
-             resolve(canvas.toDataURL('image/png'));
+             // Use 0.7 quality to save space
+             resolve(canvas.toDataURL('image/png', 0.7));
           } else { resolve(img.src); }
         };
+        img.onerror = reject;
       };
+      reader.onerror = reject;
     });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      // Process all selected files
-      for (let i = 0; i < e.target.files.length; i++) {
-          const file = e.target.files[i];
-          try {
-            const processedBase64 = await processImage(file);
-            onUploadStickerToLibrary(processedBase64);
-          } catch (err) { 
-              console.error(err); 
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      try {
+          // Fix: Use standard loop to avoid TypeScript issues with FileList iteration
+          const promises: Promise<string>[] = [];
+          for (let i = 0; i < files.length; i++) {
+              const file = files.item(i);
+              if (file) {
+                  promises.push(processImage(file));
+              }
           }
+          
+          const results = await Promise.all(promises);
+          results.forEach(src => onUploadStickerToLibrary(src));
+          
+          // Clear input so the same file can be selected again if needed
+          if (e.target) e.target.value = '';
+      } catch (err) {
+          console.error("Upload failed", err);
+          alert("Some images failed to process.");
       }
-      // Do NOT close menu so user can see uploads
     }
   };
 
@@ -82,26 +87,25 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-        <div className="bg-white w-full max-w-sm rounded-xl border-4 border-slate-900 shadow-2xl overflow-hidden relative transform -rotate-1">
+        <div className="bg-white w-full max-w-md rounded-xl border-4 border-slate-900 shadow-2xl overflow-hidden relative transform -rotate-1 flex flex-col max-h-[85vh]">
             
             {/* Header */}
-            <div className="bg-yellow-300 p-4 border-b-4 border-slate-900 flex justify-between items-center">
-                <h3 className="font-marker text-3xl text-slate-900">Sticker Box</h3>
+            <div className="bg-yellow-300 p-4 border-b-4 border-slate-900 flex justify-between items-center shrink-0">
+                <h3 className="font-marker text-3xl text-slate-900">Sticker Box ({stickerLibrary.length})</h3>
                 <button onClick={onClose} className="p-1 hover:bg-black/10 rounded-full"><X size={28} strokeWidth={2.5} /></button>
             </div>
 
-            {/* Grid */}
-            <div className="p-5 bg-grid-pattern max-h-[50vh] overflow-y-auto custom-scrollbar">
+            {/* Grid - Scrollable Area */}
+            <div className="flex-1 p-5 bg-grid-pattern overflow-y-auto custom-scrollbar min-h-0">
                 {stickerLibrary.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 font-hand text-xl">No stickers yet! <br/> Upload some cute ones 👇</div>
+                    <div className="text-center py-8 text-slate-400 font-hand text-xl">No stickers yet! <br/> Upload unlimited cute ones 👇</div>
                 ) : (
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 pb-4">
                         {stickerLibrary.map((sticker) => (
                             <div key={sticker.id} className="relative group aspect-square">
                                 <button 
                                     onClick={() => {
                                         onAddStickerToCanvas(sticker.src);
-                                        onClose(); // Auto-Close on Selection
                                     }}
                                     className="w-full h-full bg-white border-2 border-slate-200 rounded-lg hover:border-slate-800 hover:bg-yellow-50 transition-all p-2 flex items-center justify-center shadow-sm active:scale-95"
                                 >
@@ -111,7 +115,7 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
                                 {sticker.id.startsWith('c-') && onDeleteStickerFromLibrary && (
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); onDeleteStickerFromLibrary(sticker.id); }}
-                                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10 hover:scale-110"
+                                        className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-sm z-10 hover:scale-110"
                                     >
                                         <Trash2 size={12} strokeWidth={3} />
                                     </button>
@@ -123,7 +127,7 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
             </div>
 
             {/* Footer Upload */}
-            <div className="p-4 bg-white border-t-4 border-slate-900 border-dashed">
+            <div className="p-4 bg-white border-t-4 border-slate-900 border-dashed shrink-0">
                 <button 
                     onClick={() => fileInputRef.current?.click()} 
                     className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-lg font-hand font-bold text-xl hover:bg-slate-700 shadow-md active:translate-y-0.5 active:shadow-none transition-all"
