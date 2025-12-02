@@ -8,7 +8,7 @@ interface StickerMenuProps {
   onClose: () => void;
   stickerLibrary: StickerDefinition[];
   onAddStickerToCanvas: (src: string) => void;
-  onUploadStickerToLibrary: (src: string) => void;
+  onUploadStickersToLibrary: (srcs: string[]) => void;
   onDeleteStickerFromLibrary?: (id: string) => void;
 }
 
@@ -17,7 +17,7 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
   onClose, 
   stickerLibrary, 
   onAddStickerToCanvas, 
-  onUploadStickerToLibrary, 
+  onUploadStickersToLibrary, 
   onDeleteStickerFromLibrary 
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,7 +72,8 @@ const StickerMenu: React.FC<StickerMenuProps> = ({
           }
           
           const results = await Promise.all(promises);
-          results.forEach(src => onUploadStickerToLibrary(src));
+          // Send all results at once to avoid state race conditions
+          onUploadStickersToLibrary(results);
           
           // Clear input so the same file can be selected again if needed
           if (e.target) e.target.value = '';

@@ -332,32 +332,33 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
         {timeLeft.isAnniversary && <Confetti />}
 
         {/* --- TOP HEADER ICONS (Chunky & Equally Spaced) --- */}
-        <div className="fixed top-4 left-0 w-full z-[90] px-4 sm:px-8 pointer-events-none flex justify-center">
-             <div className="w-full max-w-2xl flex justify-between items-center pointer-events-auto">
+        <div className="fixed top-4 left-0 w-full z-[90] px-4 pointer-events-none flex justify-center">
+             {/* REDUCED MAX-WIDTH to bring icons closer (max-w-lg) and reduced icon size (w-11) */}
+             <div className="w-full max-w-lg flex justify-between items-center pointer-events-auto gap-2">
                  
-                 <button onClick={() => setIsStickerMenuOpen(true)} className="w-14 h-14 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <Sparkles size={24} className="text-slate-900" />
+                 <button onClick={() => setIsStickerMenuOpen(true)} className="w-11 h-11 bg-yellow-400 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Sparkles size={20} className="text-slate-900" />
                  </button>
 
-                 <button onClick={() => setIsShareOpen(true)} className="w-14 h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <Share2 size={24} className="text-slate-900" />
+                 <button onClick={() => setIsShareOpen(true)} className="w-11 h-11 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Share2 size={20} className="text-slate-900" />
                  </button>
                  
-                 <button onClick={() => setIsPeopleOpen(true)} className="w-14 h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <Users size={24} className="text-slate-900" />
+                 <button onClick={() => setIsPeopleOpen(true)} className="w-11 h-11 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Users size={20} className="text-slate-900" />
                  </button>
                  
-                 <button onClick={() => setIsChatOpen(true)} className="relative w-14 h-14 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <MessageCircle size={24} className="text-slate-900" />
-                    {hasUnreadMsg && <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full border-2 border-white animate-bounce"></span>}
+                 <button onClick={() => setIsChatOpen(true)} className="relative w-11 h-11 bg-white border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <MessageCircle size={20} className="text-slate-900" />
+                    {hasUnreadMsg && <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border-2 border-white animate-bounce"></span>}
                  </button>
                  
-                 <button onClick={handleClearPage} className="w-14 h-14 bg-rose-100 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <Eraser size={24} className="text-rose-600" />
+                 <button onClick={handleClearPage} className="w-11 h-11 bg-rose-100 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <Eraser size={20} className="text-rose-600" />
                  </button>
                  
-                 <button onClick={onExit} className="w-14 h-14 bg-slate-900 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_#fbbf24] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
-                    <LogOut size={24} className="text-yellow-400" />
+                 <button onClick={onExit} className="w-11 h-11 bg-slate-900 border-4 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_#fbbf24] flex items-center justify-center hover:scale-110 active:scale-95 transition-all">
+                    <LogOut size={20} className="text-yellow-400" />
                  </button>
 
              </div>
@@ -374,8 +375,14 @@ const CountdownRoom: React.FC<CountdownRoomProps> = ({ room, currentUser, apiUrl
                 reportInteraction();
                 pushUpdates({ stickers: updated });
             }}
-            onUploadStickerToLibrary={(src) => {
-                const newLib = [{id:`c-${Date.now()}-${Math.random()}`, src, label:'Custom'}, ...customLibrary];
+            onUploadStickersToLibrary={(srcs) => {
+                // BATCH UPLOAD: Handle multiple stickers at once to prevent state overrides
+                const newItems = srcs.map(src => ({
+                    id: `c-${Date.now()}-${Math.random()}`, 
+                    src, 
+                    label: 'Custom'
+                }));
+                const newLib = [...newItems, ...customLibrary];
                 setCustomLibrary(newLib);
                 reportInteraction();
                 pushUpdates({ customLibrary: newLib });
