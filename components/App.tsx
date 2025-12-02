@@ -1,67 +1,40 @@
 
-import React, { useState, useEffect } from 'react';
-import AuthScreen from './AuthScreen';
-import Dashboard from './Dashboard';
-import CountdownRoom from './CountdownRoom';
+import React from 'react';
+import { TimeLeft } from '../utils/time';
 
-// API URL CONFIGURATION
-const API_URL = (import.meta as any).env?.VITE_API_URL || "/api/data";
+interface CountdownTimerProps {
+  timeLeft: TimeLeft;
+}
 
-const App: React.FC = () => {
-  // Initialize User directly from storage for instant load
-  const [user, setUser] = useState<{ username: string } | null>(() => {
-      try {
-          const saved = localStorage.getItem('app_user');
-          return saved ? JSON.parse(saved) : null;
-      } catch (e) { return null; }
-  });
+const TimeUnit: React.FC<{ value: number; label: string; rotate?: string }> = ({ value, label, rotate = 'rotate-0' }) => (
+  <div className={`flex flex-col items-center mx-0.5 sm:mx-2 transform ${rotate} shrink-0`}>
+    <div className="relative">
+        {/* Force huge text but use standard sizes to prevent layout bugs */}
+        <div className="text-4xl sm:text-7xl md:text-8xl font-marker text-slate-800 tabular-nums tracking-wide drop-shadow-sm leading-none">
+        {String(value).padStart(2, '0')}
+        </div>
+        <svg className="absolute -bottom-1 left-0 w-full h-1 sm:h-2 text-yellow-300/50 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none">
+            <path d="M0,5 Q50,10 100,5" stroke="currentColor" strokeWidth="8" fill="none" />
+        </svg>
+    </div>
+    <span className="text-sm sm:text-xl font-hand text-slate-600 font-bold mt-1 sm:mt-2 uppercase tracking-wider">
+      {label}
+    </span>
+  </div>
+);
 
-  // Initialize Screen based on user existence
-  const [screen, setScreen] = useState<'AUTH' | 'DASHBOARD' | 'ROOM'>(() => {
-      return localStorage.getItem('app_user') ? 'DASHBOARD' : 'AUTH';
-  });
-  
-  // Active Room Data
-  const [activeRoom, setActiveRoom] = useState<any>(null);
-
-  const handleAuthenticate = (userData: { username: string }) => {
-      setUser(userData);
-      localStorage.setItem('app_user', JSON.stringify(userData));
-      setScreen('DASHBOARD');
-  };
-
-  const handleJoinRoom = (roomData: any) => {
-      setActiveRoom(roomData);
-      setScreen('ROOM');
-  };
-
-  const handleExitRoom = () => {
-      setActiveRoom(null);
-      setScreen('DASHBOARD');
-  };
-
-  // --- RENDER ROUTER ---
-
-  if (screen === 'AUTH') {
-      return <AuthScreen onAuthenticate={handleAuthenticate} apiUrl={API_URL} />;
-  }
-
-  if (screen === 'DASHBOARD' && user) {
-      return <Dashboard username={user.username} onJoinRoom={handleJoinRoom} apiUrl={API_URL} />;
-  }
-
-  if (screen === 'ROOM' && activeRoom && user) {
-      return (
-        <CountdownRoom 
-            room={activeRoom} 
-            currentUser={user.username} 
-            apiUrl={API_URL} 
-            onExit={handleExitRoom} 
-        />
-      );
-  }
-
-  return <div className="p-10 text-center font-hand text-xl animate-pulse mt-20">Loading...</div>;
+const CountdownTimer: React.FC<CountdownTimerProps> = ({ timeLeft }) => {
+  return (
+    <div className="flex flex-nowrap justify-center items-center py-4 sm:py-8 px-2 bg-white/40 backdrop-blur-sm rounded-xl border-2 border-slate-800/5 shadow-sm transform -rotate-1 w-full overflow-hidden whitespace-nowrap mx-auto">
+      <TimeUnit value={timeLeft.days} label="Days" rotate="-rotate-2" />
+      <span className="text-4xl sm:text-7xl md:text-8xl font-marker text-slate-400 -mt-2 sm:-mt-8 px-0.5">:</span>
+      <TimeUnit value={timeLeft.hours} label="Hours" rotate="rotate-1" />
+      <span className="text-4xl sm:text-7xl md:text-8xl font-marker text-slate-400 -mt-2 sm:-mt-8 px-0.5">:</span>
+      <TimeUnit value={timeLeft.minutes} label="Mins" rotate="-rotate-1" />
+      <span className="text-4xl sm:text-7xl md:text-8xl font-marker text-slate-400 -mt-2 sm:-mt-8 px-0.5">:</span>
+      <TimeUnit value={timeLeft.seconds} label="Secs" rotate="rotate-2" />
+    </div>
+  );
 };
 
-export default App;
+export default CountdownTimer;
